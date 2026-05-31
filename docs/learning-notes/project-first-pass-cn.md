@@ -1,6 +1,6 @@
 # NeoForge Mod Agent 第一遍学习笔记
 
-> 文档定位：这是从零学习本项目后的第一遍复盘笔记。它不是架构真相源，正式口径仍以 `docs/project-learning-plan-cn.md`、`docs/architecture.md` 和 `docs/project-limitations.md` 为准。
+> 文档定位：这是从零学习本项目后的第一遍复盘笔记。它不是架构真相源，正式口径仍以 `docs/architecture.md` 和 `docs/project-limitations.md` 为准。
 
 ## 项目一句话定位
 
@@ -399,4 +399,3 @@ Direct Code Lane 只接受结构化 write_file / replace_text patch，并经过 
 ## 一分钟复述
 
 这是一个面向 NeoForge Minecraft Mod 的受控代码生成 agent。它不是让 LLM 直接自由写完整工程，而是先把自然语言转成结构化 `ModSpec`，再由 deterministic generator 生成 Java、资源 JSON、PNG、配方、loot table 等文件。生成后通过 audit、build、repair、replay 留下可验证证据。mock LLM 用于稳定学习、测试、CI 和演示，real LLM 用于验证真实模型能力。RAG 给 planner 和 repair 提供本地知识，但不替代 validator、audit 和 build。Direct Code Lane 和 Free-Code Lab 用来处理 `ModSpec` 覆盖不了的需求，但都保持受控边界，所以项目不是无边界 coding agent。
-

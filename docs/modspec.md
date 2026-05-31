@@ -1,6 +1,6 @@
 # ModSpec Reference
 
-> 文档定位：这是 NeoForge ModSpec 参考文档，不建议从头背。学习规格层先看 [project-learning-plan-cn.md](project-learning-plan-cn.md) Day 2，需要字段细节时查本文。
+> 文档定位：这是 NeoForge ModSpec 参考文档，不建议从头背。了解整体架构后，需要字段细节时查本文。
 
 `ModSpec` is the source of truth for generated NeoForge workspaces. It is also the current stable `DomainSpec` implementation for the `minecraft.neoforge` domain: natural language requests and optional LLM planning both resolve into this structure before deterministic generation begins.
 

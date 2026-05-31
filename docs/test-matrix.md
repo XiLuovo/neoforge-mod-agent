@@ -1,6 +1,6 @@
 # Test Matrix
 
-> 文档定位：这是测试覆盖查证文件，不建议从头读。学习主线见 [`project-learning-plan-cn.md`](project-learning-plan-cn.md)，只在需要证明某个能力有测试覆盖时查本文。
+> 文档定位：这是测试覆盖查证文件，不建议从头读；只在需要证明某个能力有测试覆盖时查本文。
 
 ## V8.5 Capability Harvest Loop
 

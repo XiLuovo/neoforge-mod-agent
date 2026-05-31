@@ -1,6 +1,6 @@
 # README 术语表
 
-> 文档定位：这是术语词典，不是主学习路线。先按 [project-learning-plan-cn.md](project-learning-plan-cn.md) 学 Day 01-07；遇到词看不懂时，再回到本文按词查。
+> 文档定位：这是术语词典，不是主入口；遇到词看不懂时，再回到本文按词查。
 
 ## 最先记住的一句话
 

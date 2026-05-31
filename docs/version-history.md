@@ -1,6 +1,6 @@
 # Version History
 
-> 文档定位：这是历史版本查证文件，不建议从头读。学习和面试主线见 [`project-learning-plan-cn.md`](project-learning-plan-cn.md)，当前边界见 [`project-limitations.md`](project-limitations.md)。
+> 文档定位：这是历史版本查证文件，不建议从头读。当前边界见 [`project-limitations.md`](project-limitations.md)。
 
 > 历史边界说明：本文保留每个版本发布时的原始说法。V8.4 之前出现的“LLM 只输出 ModSpec / 不直接写 Java / ModSpec-only”属于 historical boundary，不代表当前最新架构。current boundary 是 `ModSpec-first hybrid`：默认不让 LLM 裸写工程文件；当 `ModSpec` 表达不足时，允许 Direct Code Lane 产出 structured Direct Code Patch，并强制 `review -> snapshot -> audit -> build -> rollback evidence`。当前口径以 [`project-limitations.md`](project-limitations.md)、[`direct-code-lane.md`](direct-code-lane.md) 和 [`agent-workflow.md`](agent-workflow.md) 为准。
 

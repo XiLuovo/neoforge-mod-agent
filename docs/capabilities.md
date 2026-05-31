@@ -1,6 +1,6 @@
 # Capability Matrix
 
-> 文档定位：这是能力矩阵查证文件，不建议从头读。学习主线见 [project-learning-plan-cn.md](project-learning-plan-cn.md)，需要确认当前能力边界时再查本文。历史版本流水账见 [version-history.md](version-history.md)。
+> 文档定位：这是能力矩阵查证文件，不建议从头读。需要确认当前能力边界时再查本文。历史版本流水账见 [version-history.md](version-history.md)。
 
 ## Current Stable Capabilities
 

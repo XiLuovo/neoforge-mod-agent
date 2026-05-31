@@ -1,6 +1,6 @@
 ﻿# NeoForge Mod Agent 设计报告
 
-> 文档定位：这是 Agent 设计取舍专项材料，不是主学习入口。先看 [project-learning-plan-cn.md](project-learning-plan-cn.md)、[architecture.md](architecture.md) 和 [agent-workflow.md](agent-workflow.md)，再用本文理解为什么采用受控 workflow，而不是开放式 ReAct。
+> 文档定位：这是 Agent 设计取舍专项材料，不是主入口。先看 [architecture.md](architecture.md)、[agent-workflow.md](agent-workflow.md) 和 [project-limitations.md](project-limitations.md)，再用本文理解为什么采用受控 workflow，而不是开放式 ReAct。
 
 ## 结论
 

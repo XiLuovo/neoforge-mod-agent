@@ -38,10 +38,9 @@ py -3.11 -m agent.cli harvest-report --run-name <name> --json
 如果目标是先学懂项目，按这个顺序读：
 
 1. [docs/README.md](docs/README.md)：文档分层入口。
-2. [docs/project-learning-plan-cn.md](docs/project-learning-plan-cn.md)：7 天学习主线。
-3. [docs/project-limitations.md](docs/project-limitations.md)：当前边界、不足和后续方向。
-4. [docs/architecture.md](docs/architecture.md) / [docs/agent-workflow.md](docs/agent-workflow.md)：架构和 agent workflow 真相源。
-5. [docs/direct-code-lane.md](docs/direct-code-lane.md) / [docs/capability-harvest-loop.md](docs/capability-harvest-loop.md)：Direct Code Lane 和 Free-Code Lab 机制真相源。
+2. [docs/project-limitations.md](docs/project-limitations.md)：当前边界、不足和后续方向。
+3. [docs/architecture.md](docs/architecture.md) / [docs/agent-workflow.md](docs/agent-workflow.md)：架构和 agent workflow 真相源。
+4. [docs/direct-code-lane.md](docs/direct-code-lane.md) / [docs/capability-harvest-loop.md](docs/capability-harvest-loop.md)：Direct Code Lane 和 Free-Code Lab 机制真相源。
 
 更多公开文档从 [docs/README.md](docs/README.md) 进入。
 

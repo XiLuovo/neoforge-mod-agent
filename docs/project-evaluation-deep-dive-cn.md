@@ -1,13 +1,13 @@
 # 项目评价与深度补充
 
-> 文档定位：这是深度补充材料，不是主学习入口。先按 [project-learning-plan-cn.md](project-learning-plan-cn.md) 学完 Day 01-07；需要展开项目价值、不足、后续路线或面试追问时，再读本文。当前边界以 [project-limitations.md](project-limitations.md) 为准。
+> 文档定位：这是深度补充材料，不是主入口。需要展开项目价值、不足、后续路线或追问时，再读本文。当前边界以 [project-limitations.md](project-limitations.md) 为准。
 
 ## 先看哪里
 
 如果只是为了学懂项目，先不要从本文开始。推荐顺序：
 
 ```text
-project-learning-plan-cn.md
+docs/README.md
 -> architecture.md
 -> agent-workflow.md
 -> direct-code-lane.md

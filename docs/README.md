@@ -2,15 +2,14 @@
 
 > 文档定位：这是 `docs/` 的总入口。它只负责告诉你先读什么、哪里查细节；架构和机制细节不要在这里展开。
 
-## 只读 5 篇
+## 只读 4 篇
 
 如果目标是自己学懂项目，按这个顺序读：
 
-1. [project-learning-plan-cn.md](project-learning-plan-cn.md)：7 天学习主线。
-2. [project-limitations.md](project-limitations.md)：当前边界、不足和后续方向。
-3. [architecture.md](architecture.md)：整体架构和数据流。
-4. [agent-workflow.md](agent-workflow.md)：agent runtime 阶段、角色和证据文件。
-5. [readme-glossary-cn.md](readme-glossary-cn.md)：术语词典，不懂再查。
+1. [project-limitations.md](project-limitations.md)：当前边界、不足和后续方向。
+2. [architecture.md](architecture.md)：整体架构和数据流。
+3. [agent-workflow.md](agent-workflow.md)：agent runtime 阶段、角色和证据文件。
+4. [readme-glossary-cn.md](readme-glossary-cn.md)：术语词典，不懂再查。
 
 Direct Code Lane 机制见 [direct-code-lane.md](direct-code-lane.md)，Capability Harvest Loop / Free-Code Lab 机制见 [capability-harvest-loop.md](capability-harvest-loop.md)。
 
@@ -18,10 +17,9 @@ Direct Code Lane 机制见 [direct-code-lane.md](direct-code-lane.md)，Capabili
 
 | 分层 | 文档 | 什么时候看 |
 | --- | --- | --- |
-| 学习入口 | [project-learning-plan-cn.md](project-learning-plan-cn.md) | 按 7 天路线真正学懂项目。 |
+| 项目边界 | [project-limitations.md](project-limitations.md) | 确认项目能做什么、不能做什么。 |
 | 学习补充 | [learning-notes/engineering-basics-cn.md](learning-notes/engineering-basics-cn.md) | 查 fallback、工程稳定性、可复现、CI 等基础概念。 |
 | 学习补充 | [learning-notes/project-first-pass-cn.md](learning-notes/project-first-pass-cn.md) | 第一遍学完后的整体复盘笔记。 |
-| 边界入口 | [project-limitations.md](project-limitations.md) | 确认项目能做什么、不能做什么。 |
 | 术语入口 | [readme-glossary-cn.md](readme-glossary-cn.md) | 查 `ModSpec`、RAG、Direct Code Lane 等词。 |
 | 架构真相源 | [architecture.md](architecture.md) | 查整体分层、数据流和 domain plugin 边界。 |
 | Agent 真相源 | [agent-workflow.md](agent-workflow.md) | 查 planner/reviewer/executor/auditor/repair/replay。 |
@@ -90,5 +88,4 @@ Direct Code Lane 机制见 [direct-code-lane.md](direct-code-lane.md)，Capabili
 ## 历史和旧学习材料
 
 - [version-history.md](version-history.md)：历史版本查证，不用从头读。
-- [learning-roadmap-cn.md](learning-roadmap-cn.md)：旧版长学习导航，主线已收敛到 [project-learning-plan-cn.md](project-learning-plan-cn.md)。
 - [project-evaluation-deep-dive-cn.md](project-evaluation-deep-dive-cn.md)：深度评价补充，适合学完主线后看。

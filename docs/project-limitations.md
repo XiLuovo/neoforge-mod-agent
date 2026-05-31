@@ -1,6 +1,6 @@
 # 项目当前不足与后续路线
 
-> 文档定位：这是统一边界入口。学习主线见 [`project-learning-plan-cn.md`](project-learning-plan-cn.md)，面试讲法见 [`interview-script.md`](interview-script.md)；所有对外表述都应以本文的不足和边界为准。
+> 文档定位：这是统一边界入口；所有对外表述都应以本文的不足和边界为准。
 
 最后更新：2026-05-29
 
