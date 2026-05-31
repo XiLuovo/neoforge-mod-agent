@@ -1,0 +1,88 @@
+{
+  "mod_id": "world_mod",
+  "mod_name": "World Mod",
+  "package": "com.generated.world_mod",
+  "version": "0.1.0",
+  "features": [
+    {
+      "type": "biome",
+      "id": "ruby_fields",
+      "display_name_en_us": "Ruby Fields",
+      "temperature": 0.9,
+      "downfall": 0.25,
+      "sky_color": 12086413,
+      "water_color": 12733738,
+      "water_fog_color": 8004671,
+      "fog_color": 14262712,
+      "grass_color": 9227122,
+      "foliage_color": 7061097
+    },
+    {
+      "type": "dimension",
+      "id": "ruby_realm",
+      "display_name_en_us": "Ruby Realm",
+      "dimension_type": "overworld_like",
+      "biome": "world_mod:ruby_fields",
+      "generator": "noise",
+      "ambient_light": 0.15
+    },
+    {
+      "type": "world_feature",
+      "id": "ruby_vein",
+      "display_name_en_us": "Ruby Vein",
+      "feature_kind": "ore_vein",
+      "target_block": "minecraft:stone_ore_replaceables",
+      "placed_block": "minecraft:redstone_ore",
+      "biomes": "world_mod:ruby_fields",
+      "step": "underground_ores",
+      "vein_size": 6,
+      "veins_per_chunk": 5,
+      "min_y": -48,
+      "max_y": 32
+    },
+    {
+      "type": "loot_pool",
+      "id": "ruby_shrine_loot",
+      "display_name_en_us": "Ruby Shrine Loot",
+      "table_kind": "chest",
+      "rolls": 2,
+      "entries": [
+        {
+          "item": "minecraft:emerald",
+          "min_count": 1,
+          "max_count": 4,
+          "weight": 3
+        },
+        {
+          "item": "minecraft:diamond",
+          "min_count": 1,
+          "max_count": 2,
+          "weight": 1,
+          "chance": 0.5
+        }
+      ]
+    },
+    {
+      "type": "structure",
+      "id": "ruby_shrine",
+      "display_name_en_us": "Ruby Shrine",
+      "structure_kind": "jigsaw",
+      "biomes": "world_mod:ruby_fields",
+      "step": "surface_structures",
+      "terrain_adaptation": "beard_thin",
+      "spacing": 28,
+      "separation": 8,
+      "salt": 754321,
+      "size": 1,
+      "start_height": 64,
+      "loot_table": "world_mod:chests/ruby_shrine_loot"
+    }
+  ],
+  "requested_features": [
+    "Dimensions",
+    "Biomes",
+    "World Features",
+    "Structures",
+    "Loot Pools"
+  ]
+}

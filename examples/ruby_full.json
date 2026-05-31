@@ -1,0 +1,90 @@
+{
+  "mod_id": "ruby_mod",
+  "display_name": "Ruby Mod",
+  "package_name": "com.generated.ruby_mod",
+  "version": "0.2.0",
+  "description": "Full ruby feature example.",
+  "items": [
+    {
+      "type": "item",
+      "id": "ruby",
+      "display_name_en_us": "Ruby",
+      "display_name_zh_cn": "红宝石"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "block",
+      "id": "ruby_block",
+      "display_name_en_us": "Block of Ruby",
+      "display_name_zh_cn": "红宝石方块",
+      "strength": 5.0,
+      "resistance": 6.0,
+      "sound": "metal",
+      "requires_correct_tool": true,
+      "tool_tier": "iron"
+    }
+  ],
+  "ores": [
+    {
+      "type": "ore",
+      "id": "ruby_ore",
+      "display_name_en_us": "Ruby Ore",
+      "display_name_zh_cn": "红宝石矿石",
+      "drop": "ruby_mod:ruby",
+      "strength": 3.0,
+      "resistance": 3.0,
+      "sound": "stone",
+      "requires_correct_tool": true,
+      "tool_tier": "iron",
+      "min_drop": 1,
+      "max_drop": 1,
+      "affected_by_fortune": false,
+      "silk_touch_drops_self": false
+    }
+  ],
+  "foods": [
+    {
+      "type": "food",
+      "id": "ruby_apple",
+      "display_name_en_us": "Ruby Apple",
+      "display_name_zh_cn": "红宝石苹果",
+      "nutrition": 6,
+      "saturation": 0.8
+    }
+  ],
+  "swords": [
+    {
+      "type": "sword",
+      "id": "ruby_sword",
+      "display_name_en_us": "Ruby Sword",
+      "display_name_zh_cn": "红宝石剑",
+      "attack_damage_bonus": 4,
+      "attack_speed": -2.4,
+      "tool_material": "iron"
+    }
+  ],
+  "recipes": [
+    {
+      "type": "recipe",
+      "id": "ruby_block",
+      "recipe_type": "shaped",
+      "pattern": ["RRR", "RRR", "RRR"],
+      "keys": {
+        "R": "ruby_mod:ruby"
+      },
+      "result": "ruby_mod:ruby_block",
+      "count": 1
+    },
+    {
+      "type": "recipe",
+      "id": "ruby_from_ruby_block",
+      "recipe_type": "shapeless",
+      "ingredients": [
+        "ruby_mod:ruby_block"
+      ],
+      "result": "ruby_mod:ruby",
+      "count": 9
+    }
+  ]
+}

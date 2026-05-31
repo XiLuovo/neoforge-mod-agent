@@ -1,0 +1,174 @@
+{
+  "mod_id": "behavior_mod",
+  "mod_name": "Behavior Mod",
+  "package": "com.generated.behavior_mod",
+  "version": "0.1.0",
+  "features": [
+    {
+      "type": "item",
+      "id": "battle_charm",
+      "display_name_en_us": "Battle Charm",
+      "display_name_zh_cn": "",
+      "behavior": {
+        "type": "event_action",
+        "events": [
+          {
+            "trigger": "right_click",
+            "triggers": ["right_click", "inventory_tick"],
+            "trigger_mode": "sequence",
+            "window_ticks": 100,
+            "cooldown_ticks": 100,
+            "state_key": "battle_charge",
+            "state_value": 1,
+            "resource": "energy",
+            "resource_amount": 10,
+            "conditions": [
+              {
+                "type": "not_sneaking"
+              },
+              {
+                "type": "cooldown_ready",
+                "resource": "battle_charge"
+              },
+              {
+                "type": "resource_at_least",
+                "resource": "energy",
+                "resource_amount": 10
+              }
+            ],
+            "actions": [
+              {
+                "type": "heal",
+                "target": "self",
+                "amount": 4
+              },
+              {
+                "type": "apply_effect",
+                "target": "self",
+                "effect": "minecraft:regeneration",
+                "duration_ticks": 100,
+                "amplifier": 0
+              },
+              {
+                "type": "set_state",
+                "state_key": "battle_charge",
+                "state_value": 1
+              },
+              {
+                "type": "consume_resource",
+                "resource": "energy",
+                "resource_amount": 10
+              },
+              {
+                "type": "spawn_particles",
+                "particle": "minecraft:heart",
+                "count": 10
+              },
+              {
+                "type": "play_sound",
+                "sound": "minecraft:entity.experience_orb.pickup",
+                "volume": 0.8,
+                "pitch": 1.2
+              },
+              {
+                "type": "chain_event",
+                "chain_trigger": "inventory_tick",
+                "chain_target": "self",
+                "delay_ticks": 20,
+                "chain_window_ticks": 40
+              }
+            ]
+          },
+          {
+            "trigger": "inventory_tick",
+            "interval_ticks": 100,
+            "conditions": [
+              {
+                "type": "health_below",
+                "threshold": 12
+              },
+              {
+                "type": "state_equals",
+                "state_key": "battle_charge",
+                "state_value": 1
+              }
+            ],
+            "actions": [
+              {
+                "type": "spawn_particles",
+                "particle": "minecraft:heart",
+                "count": 2
+              },
+              {
+                "type": "restore_resource",
+                "resource": "energy",
+                "resource_amount": 5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "block",
+      "id": "ruby_pedestal",
+      "display_name_en_us": "Ruby Pedestal",
+      "display_name_zh_cn": "",
+      "strength": 4,
+      "resistance": 6,
+      "sound": "stone",
+      "requires_correct_tool": true,
+      "tool_tier": "iron",
+      "behavior": {
+        "type": "event_action",
+        "events": [
+          {
+            "trigger": "block_use",
+            "cooldown_ticks": 40,
+            "state_key": "pedestal_charge",
+            "state_value": 1,
+            "resource": "energy",
+            "resource_amount": 20,
+            "conditions": [
+              {
+                "type": "resource_at_least",
+                "resource": "energy",
+                "resource_amount": 20
+              }
+            ],
+            "actions": [
+              {
+                "type": "set_state",
+                "state_key": "pedestal_charge",
+                "state_value": 1
+              },
+              {
+                "type": "consume_resource",
+                "resource": "energy",
+                "resource_amount": 20
+              },
+              {
+                "type": "spawn_particles",
+                "particle": "minecraft:happy_villager",
+                "count": 12
+              },
+              {
+                "type": "play_sound",
+                "sound": "minecraft:block.amethyst_block.chime",
+                "volume": 0.8,
+                "pitch": 1.1
+              },
+              {
+                "type": "chain_event",
+                "chain_trigger": "block_use",
+                "chain_target": "self",
+                "delay_ticks": 20,
+                "chain_window_ticks": 40
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

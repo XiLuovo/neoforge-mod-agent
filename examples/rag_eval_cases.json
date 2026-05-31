@@ -1,0 +1,46 @@
+{
+  "cases": [
+    {
+      "id": "worldgen_ore_overworld",
+      "query": "ruby ore overworld underground y -64 to 32 vein size",
+      "expected_knowledge_ids": ["worldgen.overworld_ore"],
+      "expected_categories": ["worldgen"],
+      "expected_capabilities": ["overworld_ore"]
+    },
+    {
+      "id": "right_click_heal_item",
+      "query": "right click ruby charm heal player cooldown custom item",
+      "expected_knowledge_ids": ["behavior.right_click_item"],
+      "expected_categories": ["behavior"],
+      "expected_capabilities": ["right_click_behavior"]
+    },
+    {
+      "id": "procedural_texture_asset",
+      "query": "generated png texture manifest 16x16 rgba asset model",
+      "expected_knowledge_ids": ["assets.procedural_textures"],
+      "expected_categories": ["assets"],
+      "expected_capabilities": ["procedural_textures"]
+    },
+    {
+      "id": "controlled_java_extension",
+      "query": "safe controlled java extension sandbox allowed imports rollback audit build",
+      "expected_knowledge_ids": ["java.controlled_extension"],
+      "expected_categories": ["java"],
+      "expected_capabilities": ["controlled_java_extension"]
+    },
+    {
+      "id": "tool_armor_equipment",
+      "query": "ruby pickaxe helmet tool armor equipment set deterministic recipe",
+      "expected_knowledge_ids": ["content.tools_armor"],
+      "expected_categories": ["content"],
+      "expected_capabilities": ["tools_armor"]
+    },
+    {
+      "id": "unsupported_boundaries",
+      "query": "unsupported arbitrary gui handwritten java custom terrain network",
+      "expected_knowledge_ids": ["unsupported.boundaries"],
+      "expected_categories": ["limits"],
+      "expected_capabilities": ["unsupported_boundaries"]
+    }
+  ]
+}

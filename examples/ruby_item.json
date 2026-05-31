@@ -1,0 +1,15 @@
+{
+  "mod_id": "ruby_mod",
+  "display_name": "Ruby Mod",
+  "package_name": "com.generated.ruby_mod",
+  "version": "0.2.0",
+  "description": "Ruby item example.",
+  "items": [
+    {
+      "type": "item",
+      "id": "ruby",
+      "display_name_en_us": "Ruby",
+      "display_name_zh_cn": "红宝石"
+    }
+  ]
+}

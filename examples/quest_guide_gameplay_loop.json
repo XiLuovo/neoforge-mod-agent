@@ -1,0 +1,222 @@
+{
+  "mod_id": "quest_mod",
+  "mod_name": "Quest Mod",
+  "package": "com.generated.quest_mod",
+  "version": "0.1.0",
+  "features": [
+    {
+      "type": "item",
+      "id": "raw_ruby",
+      "display_name_en_us": "Raw Ruby",
+      "display_name_zh_cn": "粗红宝石"
+    },
+    {
+      "type": "item",
+      "id": "ruby",
+      "display_name_en_us": "Ruby",
+      "display_name_zh_cn": "红宝石"
+    },
+    {
+      "type": "ore",
+      "id": "ruby_ore",
+      "display_name_en_us": "Ruby Ore",
+      "display_name_zh_cn": "红宝石矿石",
+      "drop": "quest_mod:raw_ruby",
+      "strength": 3.0,
+      "resistance": 3.0,
+      "sound": "stone",
+      "requires_correct_tool": true,
+      "tool_tier": "iron",
+      "worldgen": {
+        "enabled": true,
+        "dimension": "minecraft:overworld",
+        "min_y": -48,
+        "max_y": 32,
+        "vein_size": 6,
+        "veins_per_chunk": 4
+      }
+    },
+    {
+      "type": "recipe",
+      "id": "raw_ruby_to_ruby",
+      "recipe_type": "shapeless",
+      "ingredients": ["quest_mod:raw_ruby"],
+      "result": "quest_mod:ruby",
+      "count": 1,
+      "category": "misc",
+      "group": "ruby_quest"
+    },
+    {
+      "type": "progression",
+      "id": "ruby_progression",
+      "title": "Ruby Quest Progression",
+      "summary": "A compact route used to prove V7.2 quest, advancement, and guidebook generation.",
+      "entry_stage": "mine_ruby_ore",
+      "end_stage": "refine_raw_ruby",
+      "stages": [
+        {
+          "id": "mine_ruby_ore",
+          "type": "ore",
+          "title": "Mine Ruby Ore",
+          "description": "Find ruby ore and collect raw ruby.",
+          "provides": ["raw_ruby"],
+          "evidence": ["ruby_ore"]
+        },
+        {
+          "id": "refine_raw_ruby",
+          "type": "material",
+          "title": "Refine Raw Ruby",
+          "description": "Turn raw ruby into a refined ruby item.",
+          "requires": ["raw_ruby"],
+          "provides": ["ruby"],
+          "evidence": ["recipe:raw_ruby_to_ruby"]
+        }
+      ],
+      "links": [
+        {
+          "from": "mine_ruby_ore",
+          "to": "refine_raw_ruby",
+          "trigger": "ore_drop",
+          "requirement": "Collect raw_ruby"
+        }
+      ],
+      "behavior": {
+        "type": "event_action",
+        "events": [
+          {
+            "trigger": "stage_enter",
+            "triggers": ["stage_enter", "stage_complete"],
+            "trigger_mode": "sequence",
+            "window_ticks": 120,
+            "state_key": "quest_stage",
+            "state_value": "mine_ruby_ore",
+            "resource": "progress",
+            "resource_amount": 1,
+            "conditions": [
+              {
+                "type": "state_equals",
+                "state_key": "quest_stage",
+                "state_value": "mine_ruby_ore"
+              }
+            ],
+            "actions": [
+              {
+                "type": "set_state",
+                "state_key": "quest_stage",
+                "state_value": "mine_ruby_ore"
+              },
+              {
+                "type": "chain_event",
+                "chain_trigger": "stage_complete",
+                "chain_target": "progression",
+                "delay_ticks": 20,
+                "chain_window_ticks": 40
+              },
+              {
+                "type": "spawn_particles",
+                "particle": "minecraft:happy_villager",
+                "count": 6
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "quest",
+      "id": "ruby_questline",
+      "title": "Ruby Questline",
+      "summary": "Visible goals for the ruby progression, generated as advancements and guidebook pages.",
+      "target_progression": "ruby_progression",
+      "guidebook_id": "ruby_guidebook",
+      "category": "ruby_progression",
+      "tasks": [
+        {
+          "id": "mine_ruby_ore",
+          "title": "Mine Ruby Ore",
+          "description": "Mine the first ruby ore vein.",
+          "task_type": "mine_block",
+          "target": "ruby_ore",
+          "icon": "ruby_ore",
+          "guide_text": "Start underground, mine ruby ore, and collect raw ruby.",
+          "reward_xp": 25
+        },
+        {
+          "id": "refine_raw_ruby",
+          "title": "Refine Raw Ruby",
+          "description": "Craft raw ruby into refined ruby.",
+          "task_type": "craft_item",
+          "target": "recipe:raw_ruby_to_ruby",
+          "icon": "ruby",
+          "parent": "mine_ruby_ore",
+          "guide_text": "Use the generated shapeless recipe to turn raw ruby into ruby.",
+          "reward_xp": 25
+        }
+      ],
+      "behavior": {
+        "type": "event_action",
+        "events": [
+          {
+            "trigger": "quest_start",
+            "triggers": ["quest_start", "guide_open"],
+            "trigger_mode": "sequence",
+            "window_ticks": 60,
+            "state_key": "quest_state",
+            "state_value": "started",
+            "actions": [
+              {
+                "type": "set_state",
+                "state_key": "quest_state",
+                "state_value": "started"
+              },
+              {
+                "type": "spawn_particles",
+                "particle": "minecraft:heart",
+                "count": 6
+              },
+              {
+                "type": "play_sound",
+                "sound": "minecraft:entity.experience_orb.pickup",
+                "volume": 0.8,
+                "pitch": 1.1
+              }
+            ]
+          },
+          {
+            "trigger": "task_complete",
+            "conditions": [
+              {
+                "type": "state_equals",
+                "state_key": "quest_state",
+                "state_value": "started"
+              }
+            ],
+            "actions": [
+              {
+                "type": "increment_state",
+                "state_key": "quest_progress",
+                "state_delta": 1
+              },
+              {
+                "type": "chain_event",
+                "chain_trigger": "quest_complete",
+                "chain_target": "quest",
+                "delay_ticks": 20,
+                "chain_window_ticks": 40
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "requested_features": [
+    "Items",
+    "Ores",
+    "Recipes",
+    "Progression",
+    "Quests",
+    "Advancements",
+    "Guidebook"
+  ]
+}

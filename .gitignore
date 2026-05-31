@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.tmp/
+dist/
+.gradle-user-home/
+.gradle-default-user-home/
+.playwright-mcp/
+.codex/
+.env
+.env.*
+!.env.example
+
+workspace/*
+!workspace/.gitkeep

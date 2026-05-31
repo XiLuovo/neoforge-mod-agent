@@ -1,0 +1,29 @@
+{
+  "mod_id": "extension_mod",
+  "mod_name": "Extension Mod",
+  "display_name": "Extension Mod",
+  "package": "com.generated.extension_mod",
+  "version": "0.1.0",
+  "description": "V6 controlled Java extension smoke spec.",
+  "features": [
+    {
+      "type": "java_extension",
+      "id": "safe_info_extension",
+      "display_name_en_us": "Safe Info Extension",
+      "class_name": "SafeInfoExtension",
+      "purpose": "Expose a tiny compile-time helper without editing existing generated sources.",
+      "explanation": "The deterministic generator renders this as an additive managed class under the extension package.",
+      "allowed_imports": [
+        "net.minecraft.network.chat.Component"
+      ],
+      "methods": [
+        {
+          "name": "describe",
+          "return_type": "String",
+          "return_value": "Controlled Java extension generated from ModSpec.",
+          "explanation": "Returns a short audit-friendly description."
+        }
+      ]
+    }
+  ]
+}

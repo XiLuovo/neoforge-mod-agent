@@ -1,0 +1,554 @@
+{
+  "mod_id": "progression_mod",
+  "mod_name": "Progression Mod",
+  "package": "com.generated.progression_mod",
+  "version": "0.1.0",
+  "features": [
+    {
+      "type": "item",
+      "id": "raw_ruby",
+      "display_name_en_us": "Raw Ruby",
+      "display_name_zh_cn": "粗红宝石"
+    },
+    {
+      "type": "item",
+      "id": "ruby",
+      "display_name_en_us": "Ruby",
+      "display_name_zh_cn": "红宝石"
+    },
+    {
+      "type": "item",
+      "id": "ruby_key",
+      "display_name_en_us": "Ruby Key",
+      "display_name_zh_cn": "红宝石钥匙"
+    },
+    {
+      "type": "ore",
+      "id": "ruby_ore",
+      "display_name_en_us": "Ruby Ore",
+      "display_name_zh_cn": "红宝石矿石",
+      "drop": "progression_mod:raw_ruby",
+      "strength": 3.0,
+      "resistance": 3.0,
+      "sound": "stone",
+      "requires_correct_tool": true,
+      "tool_tier": "iron",
+      "worldgen": {
+        "enabled": true,
+        "dimension": "minecraft:overworld",
+        "min_y": -48,
+        "max_y": 32,
+        "vein_size": 6,
+        "veins_per_chunk": 4
+      }
+    },
+    {
+      "type": "machine",
+      "id": "ruby_compressor",
+      "display_name_en_us": "Ruby Compressor",
+      "display_name_zh_cn": "红宝石压缩机",
+      "strength": 4.0,
+      "resistance": 6.0,
+      "sound": "metal",
+      "requires_correct_tool": true,
+      "tool_tier": "iron",
+      "block_kind": "cube",
+      "machine_kind": "compressor",
+      "inventory_slots": 2,
+      "input_slots": 1,
+      "output_slots": 1,
+      "energy_capacity": 10000,
+      "energy_per_tick": 20,
+      "max_progress": 100,
+      "menu_title": "Ruby Compressor",
+      "behavior": {
+        "type": "event_action",
+        "events": [
+          {
+            "trigger": "server_tick",
+            "triggers": ["server_tick", "energy_low"],
+            "trigger_mode": "sequence",
+            "window_ticks": 40,
+            "cooldown_ticks": 20,
+            "state_key": "machine_mode",
+            "state_value": "charged",
+            "resource": "energy",
+            "resource_amount": 20,
+            "conditions": [
+              {
+                "type": "resource_at_least",
+                "resource": "energy",
+                "resource_amount": 20
+              },
+              {
+                "type": "state_equals",
+                "state_key": "machine_mode",
+                "state_value": "charged"
+              }
+            ],
+            "actions": [
+              {
+                "type": "set_state",
+                "state_key": "machine_mode",
+                "state_value": "charged"
+              },
+              {
+                "type": "consume_resource",
+                "resource": "energy",
+                "resource_amount": 20
+              },
+              {
+                "type": "spawn_particles",
+                "particle": "minecraft:happy_villager",
+                "count": 8
+              },
+              {
+                "type": "play_sound",
+                "sound": "minecraft:block.amethyst_block.chime",
+                "volume": 0.8,
+                "pitch": 1
+              },
+              {
+                "type": "chain_event",
+                "chain_trigger": "machine_complete",
+                "chain_target": "machine",
+                "delay_ticks": 20,
+                "chain_window_ticks": 40
+              }
+            ]
+          },
+          {
+            "trigger": "machine_complete",
+            "conditions": [
+              {
+                "type": "state_equals",
+                "state_key": "machine_mode",
+                "state_value": "charged"
+              }
+            ],
+            "actions": [
+              {
+                "type": "clear_state",
+                "state_key": "machine_mode"
+              },
+              {
+                "type": "restore_resource",
+                "resource": "energy",
+                "resource_amount": 10
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "sword",
+      "id": "ruby_sword",
+      "display_name_en_us": "Ruby Sword",
+      "display_name_zh_cn": "红宝石剑",
+      "attack_damage_bonus": 4,
+      "attack_speed": -2.4,
+      "tool_material": "ruby"
+    },
+    {
+      "type": "recipe",
+      "id": "raw_ruby_to_ruby",
+      "recipe_type": "shapeless",
+      "ingredients": ["progression_mod:raw_ruby"],
+      "result": "progression_mod:ruby",
+      "count": 1,
+      "category": "misc",
+      "group": "ruby_progression"
+    },
+    {
+      "type": "recipe",
+      "id": "ruby_sword",
+      "recipe_type": "shaped",
+      "pattern": [" R ", " R ", " S "],
+      "keys": {
+        "R": "progression_mod:ruby",
+        "S": "minecraft:stick"
+      },
+      "result": "progression_mod:ruby_sword",
+      "count": 1,
+      "category": "equipment",
+      "group": "ruby_progression"
+    },
+    {
+      "type": "entity",
+      "id": "ruby_sentinel",
+      "display_name_en_us": "Ruby Sentinel",
+      "display_name_zh_cn": "红宝石守卫",
+      "entity_kind": "monster",
+      "category": "monster",
+      "width": 0.8,
+      "height": 2.1,
+      "tracking_range": 12,
+      "update_interval": 3,
+      "xp_reward": 12,
+      "attributes": {
+        "max_health": 32,
+        "movement_speed": 0.24,
+        "attack_damage": 6,
+        "armor": 4,
+        "follow_range": 28,
+        "knockback_resistance": 0.1
+      },
+      "drops": [
+        {
+          "item": "progression_mod:ruby_key",
+          "min_count": 1,
+          "max_count": 1,
+          "chance": 0.65
+        }
+      ],
+      "spawn": {
+        "enabled": true,
+        "biomes": "#minecraft:is_overworld",
+        "weight": 20,
+        "min_count": 1,
+        "max_count": 1,
+        "placement": "on_ground"
+      },
+      "goals": [
+        { "type": "float", "priority": 0 },
+        { "type": "melee_attack", "priority": 2, "speed": 1.05 },
+        { "type": "target_player", "priority": 3 }
+      ],
+      "attack": { "type": "melee", "damage": 6, "speed": 1.05 },
+      "behavior": {
+        "type": "event_action",
+        "events": [
+          {
+            "trigger": "spawn",
+            "triggers": ["spawn", "entity_tick"],
+            "trigger_mode": "sequence",
+            "window_ticks": 80,
+            "state_key": "rage",
+            "state_value": 1,
+            "resource": "rage",
+            "resource_amount": 10,
+            "actions": [
+              {
+                "type": "set_state",
+                "state_key": "rage",
+                "state_value": 1
+              },
+              {
+                "type": "spawn_particles",
+                "particle": "minecraft:happy_villager",
+                "count": 8
+              },
+              {
+                "type": "play_sound",
+                "sound": "minecraft:entity.experience_orb.pickup",
+                "volume": 0.8,
+                "pitch": 1.1
+              },
+              {
+                "type": "chain_event",
+                "chain_trigger": "hurt",
+                "chain_target": "self",
+                "delay_ticks": 20,
+                "chain_window_ticks": 40
+              }
+            ]
+          },
+          {
+            "trigger": "hurt",
+            "cooldown_ticks": 20,
+            "conditions": [
+              {
+                "type": "health_below",
+                "threshold": 12
+              },
+              {
+                "type": "resource_at_least",
+                "resource": "rage",
+                "resource_amount": 10
+              }
+            ],
+            "actions": [
+              {
+                "type": "increment_state",
+                "state_key": "rage",
+                "state_delta": 1
+              },
+              {
+                "type": "apply_effect",
+                "target": "self",
+                "effect": "minecraft:speed",
+                "duration_ticks": 100,
+                "amplifier": 1
+              },
+              {
+                "type": "spawn_particles",
+                "particle": "minecraft:heart",
+                "count": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "biome",
+      "id": "ruby_fields",
+      "display_name_en_us": "Ruby Fields",
+      "temperature": 0.9,
+      "downfall": 0.25,
+      "sky_color": 12086413,
+      "water_color": 12733738,
+      "water_fog_color": 8004671,
+      "fog_color": 14262712,
+      "grass_color": 9227122,
+      "foliage_color": 7061097
+    },
+    {
+      "type": "dimension",
+      "id": "ruby_realm",
+      "display_name_en_us": "Ruby Realm",
+      "dimension_type": "overworld_like",
+      "biome": "progression_mod:ruby_fields",
+      "generator": "noise",
+      "ambient_light": 0.15
+    },
+    {
+      "type": "world_feature",
+      "id": "ruby_vein",
+      "display_name_en_us": "Ruby Vein",
+      "feature_kind": "ore_vein",
+      "target_block": "minecraft:stone_ore_replaceables",
+      "placed_block": "progression_mod:ruby_ore",
+      "biomes": "progression_mod:ruby_fields",
+      "step": "underground_ores",
+      "vein_size": 6,
+      "veins_per_chunk": 5,
+      "min_y": -48,
+      "max_y": 32
+    },
+    {
+      "type": "loot_pool",
+      "id": "ruby_shrine_loot",
+      "display_name_en_us": "Ruby Shrine Loot",
+      "display_name_zh_cn": "红宝石神殿战利品",
+      "table_kind": "chest",
+      "rolls": 2,
+      "entries": [
+        {
+          "item": "progression_mod:ruby",
+          "min_count": 2,
+          "max_count": 5,
+          "weight": 4
+        },
+        {
+          "item": "progression_mod:ruby_key",
+          "min_count": 1,
+          "max_count": 1,
+          "weight": 1,
+          "chance": 0.5
+        },
+        {
+          "item": "progression_mod:ruby_sword",
+          "min_count": 1,
+          "max_count": 1,
+          "weight": 1,
+          "chance": 0.35
+        }
+      ]
+    },
+    {
+      "type": "structure",
+      "id": "ruby_shrine",
+      "display_name_en_us": "Ruby Shrine",
+      "structure_kind": "jigsaw",
+      "biomes": "progression_mod:ruby_fields",
+      "step": "surface_structures",
+      "terrain_adaptation": "beard_thin",
+      "spacing": 28,
+      "separation": 8,
+      "salt": 754322,
+      "size": 1,
+      "start_height": 64,
+      "loot_table": "progression_mod:chests/ruby_shrine_loot"
+    },
+    {
+      "type": "progression",
+      "id": "ruby_progression",
+      "title": "Ruby Progression Loop",
+      "summary": "Ore, material conversion, machine processing, equipment, entity drop, structure loot, and dimension entry are wired as one auditable gameplay route.",
+      "entry_stage": "mine_ruby_ore",
+      "end_stage": "enter_ruby_realm",
+      "stages": [
+        {
+          "id": "mine_ruby_ore",
+          "type": "ore",
+          "title": "Mine Ruby Ore",
+          "provides": ["raw_ruby"],
+          "evidence": ["ruby_ore"]
+        },
+        {
+          "id": "refine_raw_ruby",
+          "type": "material",
+          "title": "Refine Raw Ruby",
+          "requires": ["raw_ruby"],
+          "provides": ["ruby"],
+          "evidence": ["recipe:raw_ruby_to_ruby"]
+        },
+        {
+          "id": "process_with_machine",
+          "type": "machine",
+          "title": "Process With Ruby Compressor",
+          "requires": ["ruby"],
+          "unlocks": ["ruby_sword"],
+          "evidence": ["ruby_compressor"]
+        },
+        {
+          "id": "craft_equipment",
+          "type": "equipment",
+          "title": "Craft Ruby Sword",
+          "requires": ["ruby"],
+          "provides": ["ruby_sword"],
+          "evidence": ["ruby_sword", "recipe:ruby_sword"]
+        },
+        {
+          "id": "defeat_ruby_sentinel",
+          "type": "entity",
+          "title": "Defeat Ruby Sentinel",
+          "requires": ["ruby_sword"],
+          "provides": ["ruby_key"],
+          "evidence": ["ruby_sentinel"]
+        },
+        {
+          "id": "raid_ruby_shrine",
+          "type": "structure",
+          "title": "Raid Ruby Shrine",
+          "requires": ["ruby_key"],
+          "unlocks": ["ruby_realm"],
+          "evidence": ["ruby_shrine", "ruby_shrine_loot"]
+        },
+        {
+          "id": "enter_ruby_realm",
+          "type": "dimension",
+          "title": "Enter Ruby Realm",
+          "requires": ["ruby_key"],
+          "evidence": ["ruby_realm"]
+        }
+      ],
+      "links": [
+        {
+          "from": "mine_ruby_ore",
+          "to": "refine_raw_ruby",
+          "trigger": "ore_drop",
+          "requirement": "Collect raw_ruby"
+        },
+        {
+          "from": "refine_raw_ruby",
+          "to": "process_with_machine",
+          "trigger": "recipe_complete",
+          "requirement": "Craft ruby"
+        },
+        {
+          "from": "process_with_machine",
+          "to": "craft_equipment",
+          "trigger": "machine_progress_complete",
+          "requirement": "Use ruby_compressor"
+        },
+        {
+          "from": "craft_equipment",
+          "to": "defeat_ruby_sentinel",
+          "trigger": "combat",
+          "requirement": "Equip ruby_sword"
+        },
+        {
+          "from": "defeat_ruby_sentinel",
+          "to": "raid_ruby_shrine",
+          "trigger": "drop",
+          "requirement": "Obtain ruby_key"
+        },
+        {
+          "from": "raid_ruby_shrine",
+          "to": "enter_ruby_realm",
+          "trigger": "loot_unlock",
+          "requirement": "Find ruby_realm clue"
+        }
+      ],
+      "behavior": {
+        "type": "event_action",
+        "events": [
+          {
+            "trigger": "stage_enter",
+            "triggers": ["stage_enter", "stage_complete"],
+            "trigger_mode": "sequence",
+            "window_ticks": 120,
+            "state_key": "progress_step",
+            "state_value": "mine_ruby_ore",
+            "resource": "progress",
+            "resource_amount": 1,
+            "conditions": [
+              {
+                "type": "state_equals",
+                "state_key": "progress_step",
+                "state_value": "mine_ruby_ore"
+              }
+            ],
+            "actions": [
+              {
+                "type": "set_state",
+                "state_key": "progress_step",
+                "state_value": "mine_ruby_ore"
+              },
+              {
+                "type": "increment_state",
+                "state_key": "stage_index",
+                "state_delta": 1
+              },
+              {
+                "type": "chain_event",
+                "chain_trigger": "stage_complete",
+                "chain_target": "progression",
+                "delay_ticks": 20,
+                "chain_window_ticks": 40
+              }
+            ]
+          },
+          {
+            "trigger": "loop_complete",
+            "conditions": [
+              {
+                "type": "resource_at_least",
+                "resource": "progress",
+                "resource_amount": 1
+              }
+            ],
+            "actions": [
+              {
+                "type": "clear_state",
+                "state_key": "progress_step"
+              },
+              {
+                "type": "restore_resource",
+                "resource": "progress",
+                "resource_amount": 1
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "requested_features": [
+    "Items",
+    "Ores",
+    "Machines",
+    "Swords",
+    "Recipes",
+    "Entities",
+    "Biomes",
+    "Dimensions",
+    "World Features",
+    "Structures",
+    "Loot Pools",
+    "Progression"
+  ]
+}

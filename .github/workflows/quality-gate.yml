@@ -1,0 +1,35 @@
+name: Quality Gate
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  quality-gate:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run quality gate
+        env:
+          PYTHONPATH: src
+        run: python -m agent.cli quality-gate --run-name ci-quality-gate --json
+
+      - name: Upload quality gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-report
+          path: |
+            workspace/quality-gate-runs/ci-quality-gate/.agent/**
+            workspace/doctor-runs/ci-quality-gate-doctor/.agent/**
