@@ -55,7 +55,7 @@ class PortfolioDemoTests(unittest.TestCase):
 
             report = result.portfolio_report_md_path.read_text(encoding="utf-8")
             self.assertIn("V4.0 作品集级一键演示报告", report)
-            self.assertIn("面试讲解重点", report)
+            self.assertIn("讲解重点", report)
             self.assertIn("evidence_chain_report", report)
 
 

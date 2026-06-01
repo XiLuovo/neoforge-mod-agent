@@ -22,7 +22,7 @@ from neoforge_agent import AgentOrchestrator, AppConfig, BenchmarkEvaluator, Bui
 
 def test_config(workspace_root: Path) -> AppConfig:
     base = AppConfig.default()
-    return replace(base, workspace_root=workspace_root)
+    return replace(base, workspace_root=workspace_root, project_root=workspace_root)
 
 
 class AgentEvalTests(unittest.TestCase):
@@ -300,7 +300,7 @@ class AgentEvalTests(unittest.TestCase):
             config = test_config(Path(tmp))
             orchestrator = AgentOrchestrator(config)
 
-            with patch.dict(os.environ, {}, clear=True):
+            with patch.dict(os.environ, {"NEOFORGE_AGENT_ROOT": tmp}, clear=True):
                 result = orchestrator.run_generate(
                     "做一个红宝石模组，添加红宝石。",
                     planner_mode="llm",
@@ -322,7 +322,7 @@ class AgentEvalTests(unittest.TestCase):
             config = test_config(Path(tmp))
             orchestrator = AgentOrchestrator(config)
 
-            with patch.dict(os.environ, {}, clear=True):
+            with patch.dict(os.environ, {"NEOFORGE_AGENT_ROOT": tmp}, clear=True):
                 result = orchestrator.run_generate(
                     "做一个红宝石模组，添加红宝石。",
                     planner_mode="llm",

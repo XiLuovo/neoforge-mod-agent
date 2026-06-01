@@ -21,7 +21,7 @@ from neoforge_agent import AppConfig, RealLLMEvalReportRunner
 
 def test_config(workspace_root: Path) -> AppConfig:
     base = AppConfig.default()
-    return replace(base, workspace_root=workspace_root)
+    return replace(base, workspace_root=workspace_root, project_root=workspace_root)
 
 
 class LLMEvalReportTests(unittest.TestCase):
@@ -52,7 +52,7 @@ class LLMEvalReportTests(unittest.TestCase):
     def test_llm_eval_report_skips_missing_real_provider_without_network(self) -> None:
         with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
             config = test_config(Path(tmp))
-            with patch.dict(os.environ, {}, clear=True):
+            with patch.dict(os.environ, {"NEOFORGE_AGENT_ROOT": tmp}, clear=True):
                 result = RealLLMEvalReportRunner(config).run(
                     run_name="unit-llm-eval-skip-real",
                     candidate_provider="openai-compatible",
@@ -73,7 +73,7 @@ class LLMEvalReportTests(unittest.TestCase):
     def test_llm_eval_report_require_real_fails_when_provider_missing(self) -> None:
         with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
             config = test_config(Path(tmp))
-            with patch.dict(os.environ, {}, clear=True):
+            with patch.dict(os.environ, {"NEOFORGE_AGENT_ROOT": tmp}, clear=True):
                 result = RealLLMEvalReportRunner(config).run(
                     run_name="unit-llm-eval-require-real",
                     candidate_provider="openai-compatible",

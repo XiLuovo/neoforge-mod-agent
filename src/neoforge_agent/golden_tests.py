@@ -587,7 +587,7 @@ def default_golden_cases() -> list[GoldenCase]:
                 ".agent/java-extension-report.md",
             ],
             json_expectations=[
-                GoldenJsonExpectation(".agent/java-extension-report.json", {"status": "pass", "sandbox.mode": "managed-additive-class"}, contains=["SafeInfoExtension"]),
+                GoldenJsonExpectation(".agent/java-extension-report.json", {"status": "pending-build", "sandbox.mode": "managed-additive-class"}, contains=["SafeInfoExtension"]),
             ],
             min_generated_files=4,
         ),

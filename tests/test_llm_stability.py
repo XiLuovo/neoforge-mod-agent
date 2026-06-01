@@ -190,8 +190,9 @@ class LLMStabilityTests(unittest.TestCase):
         self.assertNotIn("For patch requests, Interpret every user request", create_prompt)
 
     def test_provider_config_inspection_is_secret_safe(self) -> None:
-        with patch.dict(os.environ, {}, clear=True):
-            missing = inspect_llm_provider_config("openai-compatible")
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-env-", dir=TMP_ROOT) as tmp:
+            with patch.dict(os.environ, {"NEOFORGE_AGENT_ROOT": tmp}, clear=True):
+                missing = inspect_llm_provider_config("openai-compatible")
         self.assertIsInstance(missing, LLMProviderConfig)
         self.assertFalse(missing.valid)
         self.assertFalse(missing.api_key_present)
@@ -285,8 +286,9 @@ class LLMStabilityTests(unittest.TestCase):
             self.assertEqual(overridden.env_sources["model"], "NEOFORGE_AGENT_LLM_MODEL")
 
     def test_provider_health_reports_fallback_without_secret_values(self) -> None:
-        with patch.dict(os.environ, {}, clear=True):
-            health = check_llm_provider_health("openai-compatible")
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-env-", dir=TMP_ROOT) as tmp:
+            with patch.dict(os.environ, {"NEOFORGE_AGENT_ROOT": tmp}, clear=True):
+                health = check_llm_provider_health("openai-compatible")
 
         self.assertFalse(health.healthy)
         self.assertTrue(health.fallback_recommended)
