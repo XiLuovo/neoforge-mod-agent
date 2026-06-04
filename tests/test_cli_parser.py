@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,7 +12,7 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from neoforge_agent.cli import build_parser
+from neoforge_agent.cli import _collect_agent_run_metrics, build_parser
 
 
 class CliParserTests(unittest.TestCase):
@@ -40,6 +42,43 @@ class CliParserTests(unittest.TestCase):
         self.assertIn("tools-manifest", help_text)
         self.assertIn("llm-engineering-report", help_text)
         self.assertIn("harvest-report", help_text)
+
+    def test_agent_bench_metrics_use_real_tool_loop_iterations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tool_trace_path = root / "tool-call-trace.json"
+            agent_run_path = root / "agent-run.json"
+            tool_trace_path.write_text(
+                json.dumps(
+                    [
+                        {"action": "retrieve_rag", "source": "llm"},
+                        {"action": "read_file", "source": "llm"},
+                        {"action": "finish", "source": "llm"},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            agent_run_path.write_text(
+                json.dumps(
+                    {
+                        "tool_call_trace_json_path": str(tool_trace_path),
+                        "payload": {
+                            "repair": {
+                                "iterations": 3,
+                                "repair_loop": {"attempts_count": 1},
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            tool_call_counts: list[int] = []
+            repair_attempt_counts: list[int] = []
+            _collect_agent_run_metrics(agent_run_path, tool_call_counts, repair_attempt_counts)
+
+            self.assertEqual(tool_call_counts, [3])
+            self.assertEqual(repair_attempt_counts, [3])
 
     def test_eval_arguments_parse(self) -> None:
         args = build_parser().parse_args(
@@ -483,6 +522,34 @@ class CliParserTests(unittest.TestCase):
         self.assertFalse(args.build)
         self.assertTrue(args.json)
 
+    def test_agent_develop_arguments_parse(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "agent",
+                "develop",
+                "Create a ruby tech mod.",
+                "--planner",
+                "llm",
+                "--llm-provider",
+                "mock",
+                "--workspace-name",
+                "unit-develop",
+                "--build",
+                "--max-iterations",
+                "5",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.command, "agent")
+        self.assertEqual(args.agent_command, "develop")
+        self.assertEqual(args.request, "Create a ruby tech mod.")
+        self.assertEqual(args.max_iterations, 5)
+        self.assertTrue(args.build)
+        self.assertTrue(args.audit)
+        self.assertTrue(args.repair)
+        self.assertTrue(args.json)
+
     def test_agent_modify_code_lane_parses(self) -> None:
         args = build_parser().parse_args(
             [
@@ -501,6 +568,61 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(args.agent_command, "modify")
         self.assertEqual(args.code_lane, "modspec")
         self.assertFalse(args.build)
+        self.assertTrue(args.json)
+
+    def test_agent_repair_arguments_parse(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "agent",
+                "repair",
+                "workspace/unit",
+                "--goal",
+                "Fix audit failures.",
+                "--llm-provider",
+                "mock",
+                "--max-iterations",
+                "4",
+                "--no-build",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.command, "agent")
+        self.assertEqual(args.agent_command, "repair")
+        self.assertEqual(args.workspace, "workspace/unit")
+        self.assertEqual(args.goal, "Fix audit failures.")
+        self.assertEqual(args.max_iterations, 4)
+        self.assertFalse(args.build)
+        self.assertTrue(args.audit)
+        self.assertTrue(args.json)
+
+    def test_agent_bench_arguments_parse(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "agent",
+                "bench",
+                "--suite",
+                "examples/agent_bench.json",
+                "--llm-provider",
+                "mock",
+                "--eval-limit",
+                "1",
+                "--repair-limit",
+                "1",
+                "--build",
+                "--audit",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.command, "agent")
+        self.assertEqual(args.agent_command, "bench")
+        self.assertEqual(args.suite, "examples/agent_bench.json")
+        self.assertEqual(args.llm_provider, "mock")
+        self.assertEqual(args.eval_limit, 1)
+        self.assertEqual(args.repair_limit, 1)
+        self.assertTrue(args.build)
+        self.assertTrue(args.audit)
         self.assertTrue(args.json)
 
     def test_agent_lab_generate_arguments_parse(self) -> None:

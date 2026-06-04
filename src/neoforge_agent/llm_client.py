@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -322,6 +323,12 @@ class MockLLMClient:
 
     def complete_json(self, system_prompt: str, user_prompt: str) -> LLMCompletion:
         prompt = user_prompt.lower()
+        if "LLM_REVIEWER" in system_prompt:
+            payload = self._mock_reviewer_payload(user_prompt)
+            return self._completion(system_prompt, user_prompt, payload)
+        if "TOOL_CALLING_REPAIR_AGENT" in system_prompt:
+            payload = self._mock_repair_tool_payload(user_prompt)
+            return self._completion(system_prompt, user_prompt, payload)
         is_modify = "existing modspec json" in prompt and "change request" in prompt
         if is_modify:
             payload = self._mock_modify_payload(user_prompt)
@@ -1079,6 +1086,246 @@ class MockLLMClient:
     def _load_example(self, filename: str) -> dict:
         path = self.project_root / "examples" / filename
         return json.loads(path.read_text(encoding="utf-8"))
+
+    def _mock_repair_tool_payload(self, user_prompt: str) -> dict:
+        try:
+            prompt_payload = json.loads(user_prompt)
+        except json.JSONDecodeError:
+            prompt_payload = {}
+        completed = prompt_payload.get("completed_actions") if isinstance(prompt_payload, dict) else []
+        if not isinstance(completed, list):
+            completed = []
+        completed_actions = [str(action) for action in completed]
+        prompt = user_prompt.lower()
+        current_gates = prompt_payload.get("current_gates", {}) if isinstance(prompt_payload, dict) else {}
+        audit_gate = current_gates.get("audit", {}) if isinstance(current_gates, dict) else {}
+        audit_success = audit_gate.get("success") if isinstance(audit_gate, dict) else None
+        loop_purpose = str(prompt_payload.get("loop_purpose", "repair")) if isinstance(prompt_payload, dict) else "repair"
+
+        if loop_purpose.startswith("develop"):
+            if "retrieve_rag" not in completed_actions:
+                return {
+                    "thought_summary": "Use NeoForge knowledge before refining the generated baseline workspace.",
+                    "action": "retrieve_rag",
+                    "args": {"query": "pack.mcmeta generated resources develop refinement audit", "limit": 5},
+                }
+            if "read_file" not in completed_actions:
+                return {
+                    "thought_summary": "Inspect the generated pack metadata before applying a controlled refinement.",
+                    "action": "read_file",
+                    "args": {"path": "src/main/resources/pack.mcmeta"},
+                }
+            if "apply_structured_patch" not in completed_actions:
+                match = re.search(r'"description":\s*"([^"]+ resources)"', user_prompt)
+                old = match.group(0) if match else '"description": "ruby_mod resources"'
+                description = match.group(1) if match else "ruby_mod resources"
+                return {
+                    "thought_summary": "Apply a minimal structured patch to mark the generated baseline as refined.",
+                    "action": "apply_structured_patch",
+                    "args": {
+                        "changes": [
+                            {
+                                "operation": "replace_text",
+                                "path": "src/main/resources/pack.mcmeta",
+                                "old": old,
+                                "new": f'"description": "{description} (develop refined)"',
+                                "reason": "Develop mode should refine the generated workspace through a constrained structured patch.",
+                            }
+                        ]
+                    },
+                }
+            if "run_audit" not in completed_actions:
+                return {
+                    "thought_summary": "After refining the generated workspace, rerun audit to validate the gate.",
+                    "action": "run_audit",
+                    "args": {},
+                }
+            return {
+                "thought_summary": "The develop refinement loop verified the workspace; finish with the latest observations.",
+                "action": "finish",
+                "args": {"status": "success", "summary": "Develop refinement completed after audit verification."},
+            }
+
+        if audit_success is True and (not completed_actions or completed_actions[-1] != "finish"):
+            return {
+                "thought_summary": "The requested audit gate is now passing, so the repair can finish.",
+                "action": "finish",
+                "args": {"status": "success", "summary": "Audit/build observations pass."},
+            }
+
+        if "missing required file" in prompt and "regenerate_managed_files" not in completed_actions:
+            return {
+                "thought_summary": "A generated file is missing, so deterministic regeneration is the safest repair.",
+                "action": "regenerate_managed_files",
+                "args": {},
+            }
+
+        if "neoforge.mods.toml" in prompt and "regenerate_managed_files" in completed_actions:
+            if "retrieve_rag" not in completed_actions:
+                return {
+                    "thought_summary": "Regeneration could not restore the missing mods metadata template, so retrieve repair guidance before patching.",
+                    "action": "retrieve_rag",
+                    "args": {"query": "neoforge mods.toml metadata missing generated template repair", "limit": 5},
+                }
+            if "apply_structured_patch" not in completed_actions:
+                return {
+                    "thought_summary": "Write a minimal generated NeoForge mods metadata file through the structured patch tool.",
+                    "action": "apply_structured_patch",
+                    "args": {
+                        "changes": [
+                            {
+                                "operation": "write_file",
+                                "path": "src/main/templates/META-INF/neoforge.mods.toml",
+                                "content": (
+                                    'modLoader="javafml"\n'
+                                    'loaderVersion="[4,)"\n'
+                                    'license="MIT"\n'
+                                    '[[mods]]\n'
+                                    'modId="ruby_mod"\n'
+                                    'version="0.1.0"\n'
+                                    'displayName="Ruby Mod"\n'
+                                    "description='''\n"
+                                    "Generated NeoForge metadata restored by the constrained repair agent.\n"
+                                    "'''\n"
+                                ),
+                                "reason": "Audit requires the generated NeoForge mods metadata template to exist.",
+                            }
+                        ]
+                    },
+                }
+            if "run_audit" not in completed_actions:
+                return {
+                    "thought_summary": "After restoring neoforge.mods.toml, rerun audit to verify the workspace.",
+                    "action": "run_audit",
+                    "args": {},
+                }
+            return {
+                "thought_summary": "The metadata template repair was verified by audit; finish the repair loop.",
+                "action": "finish",
+                "args": {"status": "success", "summary": "Missing NeoForge metadata template restored and audited."},
+            }
+
+        if "retrieve_rag" not in completed_actions:
+            return {
+                "thought_summary": "Use bundled NeoForge repair knowledge before editing files.",
+                "action": "retrieve_rag",
+                "args": {"query": "pack.mcmeta audit repair generated resources", "limit": 5},
+            }
+
+        if "pack.mcmeta" in prompt and "read_file" not in completed_actions:
+            return {
+                "thought_summary": "The audit points at pack.mcmeta, so read that managed resource file.",
+                "action": "read_file",
+                "args": {"path": "src/main/resources/pack.mcmeta"},
+            }
+
+        if "read_file" in completed_actions and "apply_structured_patch" not in completed_actions:
+            if '"pack_format": "BROKEN"' in user_prompt:
+                old = '"pack_format": "BROKEN"'
+            elif '"pack_format": "broken"' in prompt:
+                old = '"pack_format": "broken"'
+            else:
+                old = '"pack_format": "BROKEN"'
+            return {
+                "thought_summary": "Apply a minimal structured text replacement to restore integer pack_format.",
+                "action": "apply_structured_patch",
+                "args": {
+                    "changes": [
+                        {
+                            "operation": "replace_text",
+                            "path": "src/main/resources/pack.mcmeta",
+                            "old": old,
+                            "new": '"pack_format": 61',
+                            "reason": "Audit requires pack.pack_format to be an integer.",
+                        }
+                    ]
+                },
+            }
+
+        if "apply_structured_patch" in completed_actions and "run_audit" not in completed_actions:
+            return {
+                "thought_summary": "After a structured patch, rerun audit to verify the repair.",
+                "action": "run_audit",
+                "args": {},
+            }
+
+        if "run_audit" in completed_actions:
+            return {
+                "thought_summary": "The audit was rerun; finish based on the latest gate observation.",
+                "action": "finish",
+                "args": {"status": "success", "summary": "Repair loop completed after audit verification."},
+            }
+
+        return {
+            "thought_summary": "No targeted repair was identified; finish with the current observations.",
+            "action": "finish",
+            "args": {"status": "failed", "summary": "Mock repair agent could not identify a safe repair."},
+        }
+
+    def _mock_reviewer_payload(self, user_prompt: str) -> dict:
+        try:
+            prompt_payload = json.loads(user_prompt)
+        except json.JSONDecodeError:
+            prompt_payload = {}
+        prompt = user_prompt.lower()
+        goal = str(prompt_payload.get("user_goal", "") if isinstance(prompt_payload, dict) else "")
+        audit = prompt_payload.get("audit_result", {}) if isinstance(prompt_payload, dict) else {}
+        build = prompt_payload.get("build_result", {}) if isinstance(prompt_payload, dict) else {}
+        stage = str(prompt_payload.get("review_stage", "") if isinstance(prompt_payload, dict) else "")
+        changed_files = prompt_payload.get("changed_files_summary", []) if isinstance(prompt_payload, dict) else []
+        audit_failed = isinstance(audit, dict) and audit.get("attempted") and audit.get("success") is False
+        build_failed = isinstance(build, dict) and build.get("attempted") and build.get("success") is False
+        trigger_text = goal.lower() if goal else prompt
+
+        if "missing requirement" in trigger_text or "must include missing" in trigger_text or "needs missing feature" in trigger_text:
+            return {
+                "coverage_status": "fail",
+                "covered_requirements": ["Generated baseline workspace was reviewed."],
+                "missing_requirements": ["A requested missing feature is not represented in the ModSpec or generated workspace."],
+                "unsupported_or_risky_requests": [],
+                "patch_risks": [],
+                "recommended_checks": ["Update ModSpec or planner handling for the missing feature, then rerun audit."],
+                "decision": "reject",
+                "confidence": 0.86,
+            }
+        if "needs repair review" in trigger_text or "reviewer needs repair" in trigger_text:
+            return {
+                "coverage_status": "partial",
+                "covered_requirements": ["Generated workspace exists and can be audited."],
+                "missing_requirements": ["Reviewer requested one additional constrained refinement pass."],
+                "unsupported_or_risky_requests": [],
+                "patch_risks": ["Structured patch changed generated resources; verify audit after reviewer-requested repair."],
+                "recommended_checks": ["Run one more tool-calling refinement loop with this reviewer observation."],
+                "decision": "needs_repair",
+                "confidence": 0.78,
+            }
+        if audit_failed or build_failed:
+            return {
+                "coverage_status": "partial",
+                "covered_requirements": ["Reviewer inspected planner, trace, and gate observations."],
+                "missing_requirements": ["Deterministic audit/build gate still reports failure."],
+                "unsupported_or_risky_requests": [],
+                "patch_risks": ["Reviewer approval cannot override failing audit/build gates."],
+                "recommended_checks": ["Repair gate failures before accepting the run."],
+                "decision": "needs_repair",
+                "confidence": 0.82,
+            }
+        patch_risks = []
+        if isinstance(changed_files, list) and changed_files:
+            patch_risks.append("Changed files were constrained to generated workspace paths.")
+        return {
+            "coverage_status": "pass",
+            "covered_requirements": [
+                goal or "User goal was represented by the generated ModSpec/workspace.",
+                "Requested audit/build observations do not show failing gates.",
+            ],
+            "missing_requirements": [],
+            "unsupported_or_risky_requests": [],
+            "patch_risks": patch_risks,
+            "recommended_checks": ["Keep deterministic audit/build as the final acceptance gate."],
+            "decision": "approve" if stage != "baseline" else "approve",
+            "confidence": 0.9,
+        }
 
     def _mock_modify_payload(self, user_prompt: str) -> dict:
         change_request = user_prompt

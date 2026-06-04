@@ -7,7 +7,7 @@ from typing import Sequence
 
 from .agent_orchestrator import AgentOrchestrator
 from .auditor import WorkspaceAuditor
-from .benchmark_report import BenchmarkReportRunner
+from .benchmark_report import AgentBenchmarkRunner, BenchmarkReportRunner
 from .builder import GradleBuilder
 from .capabilities import CapabilityCatalog
 from .config import AppConfig
@@ -427,6 +427,13 @@ def build_parser() -> argparse.ArgumentParser:
     agent_generate_parser.add_argument("request", help="Natural language mod request.")
     _add_agent_generation_arguments(agent_generate_parser)
 
+    agent_develop_parser = agent_subparsers.add_parser(
+        "develop",
+        help="Run the full Minecraft mod coding-agent loop for a new workspace.",
+    )
+    agent_develop_parser.add_argument("request", help="Natural language mod development goal.")
+    _add_agent_generation_arguments(agent_develop_parser, default_max_iterations=5)
+
     agent_modify_parser = agent_subparsers.add_parser(
         "modify",
         help="Run agent orchestration for modifying an existing workspace.",
@@ -441,7 +448,53 @@ def build_parser() -> argparse.ArgumentParser:
     agent_modify_parser.set_defaults(audit=True)
     agent_modify_parser.add_argument("--no-repair", dest="repair", action="store_false", help="Skip repair-agent analysis when checks fail.")
     agent_modify_parser.set_defaults(repair=True)
+    agent_modify_parser.add_argument("--max-iterations", type=int, default=1, help="Maximum repair iterations after failed checks.")
     agent_modify_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output.")
+
+    agent_repair_parser = agent_subparsers.add_parser(
+        "repair",
+        help="Run the agent observe/retrieve/repair loop for an existing workspace.",
+    )
+    agent_repair_parser.add_argument("workspace", help="Path or workspace name of an existing generated mod project.")
+    agent_repair_parser.add_argument(
+        "--goal",
+        default="Fix build and audit failures without changing user-owned files.",
+        help="Natural language repair goal.",
+    )
+    agent_repair_parser.add_argument("--planner", choices=["rules", "llm", "auto"], default="llm", help="Planner label recorded in the repair trace.")
+    agent_repair_parser.add_argument("--llm-provider", choices=["mock", "openai-compatible"], default="mock", help="LLM provider label recorded in the repair trace.")
+    agent_repair_parser.add_argument("--max-iterations", type=int, default=5, help="Maximum repair-loop iterations.")
+    repair_build_group = agent_repair_parser.add_mutually_exclusive_group()
+    repair_build_group.add_argument("--build", dest="build", action="store_true", help="Run Gradle build during repair checks.")
+    repair_build_group.add_argument("--no-build", dest="build", action="store_false", help="Skip Gradle build during repair checks.")
+    agent_repair_parser.set_defaults(build=True)
+    repair_audit_group = agent_repair_parser.add_mutually_exclusive_group()
+    repair_audit_group.add_argument("--audit", dest="audit", action="store_true", help="Run workspace audit during repair checks.")
+    repair_audit_group.add_argument("--no-audit", dest="audit", action="store_false", help="Skip workspace audit during repair checks.")
+    agent_repair_parser.set_defaults(audit=True)
+    agent_repair_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output.")
+
+    agent_bench_parser = agent_subparsers.add_parser(
+        "bench",
+        help="Run the agent benchmark suite and aggregate coding-agent metrics.",
+    )
+    agent_bench_parser.add_argument("--suite", help="Optional JSON file containing benchmark/eval cases.")
+    agent_bench_parser.add_argument("--run-name", help="Optional stable run folder name under workspace/benchmark-runs/.")
+    agent_bench_parser.add_argument("--llm-provider", choices=["mock", "openai-compatible"], default="mock", help="Primary provider to benchmark.")
+    agent_bench_parser.add_argument("--baseline-provider", choices=["mock", "openai-compatible"], default="mock", help="Baseline provider for model A.")
+    agent_bench_parser.add_argument("--eval-limit", type=int, default=3, help="Number of eval cases per model run.")
+    agent_bench_parser.add_argument("--repair-limit", type=int, default=3, help="Number of injected failure repair cases.")
+    agent_bench_parser.add_argument("--run-real", action="store_true", help="Actually run a real OpenAI-compatible provider instead of only preflighting it.")
+    agent_bench_parser.add_argument("--require-real", action="store_true", help="Fail if the real provider is not configured.")
+    bench_build_group = agent_bench_parser.add_mutually_exclusive_group()
+    bench_build_group.add_argument("--build", dest="build", action="store_true", help="Run Gradle build for benchmark cases.")
+    bench_build_group.add_argument("--no-build", dest="build", action="store_false", help="Skip Gradle build for benchmark cases.")
+    agent_bench_parser.set_defaults(build=False)
+    bench_audit_group = agent_bench_parser.add_mutually_exclusive_group()
+    bench_audit_group.add_argument("--audit", dest="audit", action="store_true", help="Run workspace audit for benchmark cases.")
+    bench_audit_group.add_argument("--no-audit", dest="audit", action="store_false", help="Skip workspace audit for benchmark cases.")
+    agent_bench_parser.set_defaults(audit=True)
+    agent_bench_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output.")
 
     agent_lab_generate_parser = agent_subparsers.add_parser(
         "lab-generate",
@@ -496,7 +549,7 @@ def _add_agent_common_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_agent_generation_arguments(parser: argparse.ArgumentParser) -> None:
+def _add_agent_generation_arguments(parser: argparse.ArgumentParser, *, default_max_iterations: int = 1) -> None:
     parser.add_argument("--mod-id", dest="mod_id", help="Override the generated mod_id.")
     parser.add_argument("--name", dest="display_name", help="Override the generated display name.")
     parser.add_argument("--package", dest="package_name", help="Override the generated Java package name.")
@@ -514,6 +567,7 @@ def _add_agent_generation_arguments(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(audit=True)
     parser.add_argument("--no-repair", dest="repair", action="store_false", help="Skip repair-agent analysis when checks fail.")
     parser.set_defaults(repair=True)
+    parser.add_argument("--max-iterations", type=int, default=default_max_iterations, help="Maximum repair iterations after failed checks.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output.")
 
 
@@ -1144,8 +1198,22 @@ def _run_agent_command(args: argparse.Namespace, config: AppConfig) -> int:
         _print_payload(payload, as_json=args.json)
         return 0 if result.success else 1
 
+    if args.agent_command == "bench":
+        result = AgentBenchmarkRunner(config).run(
+            cases_path=Path(args.suite) if args.suite else None,
+            run_name=args.run_name,
+            eval_limit=args.eval_limit,
+            repair_limit=args.repair_limit,
+            llm_provider=args.llm_provider,
+            run_build=args.build,
+            run_audit=args.audit,
+        )
+        payload = result.to_dict()
+        _print_payload(payload, as_json=args.json)
+        return 0 if result.success else 1
+
     orchestrator = AgentOrchestrator(config)
-    if args.agent_command == "generate":
+    if args.agent_command in {"generate", "develop"}:
         overrides = RequestOverrides(
             mod_id=getattr(args, "mod_id", None),
             display_name=getattr(args, "display_name", None),
@@ -1155,18 +1223,32 @@ def _run_agent_command(args: argparse.Namespace, config: AppConfig) -> int:
             license_name=getattr(args, "license_name", None),
             description=getattr(args, "description", None),
         )
-        result = orchestrator.run_generate(
-            args.request,
-            overrides=overrides,
+        run_kwargs = {
+            "overrides": overrides,
+            "planner_mode": args.planner,
+            "llm_provider": args.llm_provider,
+            "workspace_name": args.workspace_name,
+            "overwrite": args.overwrite,
+            "run_build": args.build,
+            "run_audit": args.audit,
+            "repair": args.repair,
+            "require_llm": args.require_llm,
+            "code_lane": args.code_lane,
+            "max_iterations": args.max_iterations,
+        }
+        if args.agent_command == "develop":
+            result = orchestrator.run_develop(args.request, **run_kwargs)
+        else:
+            result = orchestrator.run_generate(args.request, **run_kwargs)
+    elif args.agent_command == "repair":
+        result = orchestrator.run_repair(
+            _resolve_project_dir(args.workspace, config),
+            goal=args.goal,
             planner_mode=args.planner,
             llm_provider=args.llm_provider,
-            workspace_name=args.workspace_name,
-            overwrite=args.overwrite,
+            max_iterations=args.max_iterations,
             run_build=args.build,
             run_audit=args.audit,
-            repair=args.repair,
-            require_llm=args.require_llm,
-            code_lane=args.code_lane,
         )
     else:
         result = orchestrator.run_modify(
@@ -1178,11 +1260,111 @@ def _run_agent_command(args: argparse.Namespace, config: AppConfig) -> int:
             run_audit=args.audit,
             repair=args.repair,
             code_lane=args.code_lane,
+            max_iterations=args.max_iterations,
         )
 
     payload = result.to_dict()
     _print_payload(payload, as_json=args.json)
     return 0 if result.success else 1
+
+
+def _agent_bench_payload(result) -> dict:
+    payload = result.to_dict()
+    model_runs = payload.get("model_runs") or []
+    completed = [run for run in model_runs if run.get("status") in {"pass", "fail"}]
+    audit_rates = [
+        float((run.get("metrics") or {}).get("audit_success_rate", 0) or 0)
+        for run in completed
+    ]
+    rag_rates = [
+        float((run.get("metrics") or {}).get("rag_hit_rate", 0) or 0)
+        for run in completed
+    ]
+    trace_paths: list[str] = []
+    failed_cases: list[dict] = []
+    tool_call_counts: list[int] = []
+    repair_attempt_counts: list[int] = []
+    for run in completed:
+        eval_path = run.get("eval_report_path")
+        if not eval_path:
+            continue
+        try:
+            eval_report = json.loads(Path(eval_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for case in eval_report.get("cases", []):
+            if not isinstance(case, dict):
+                continue
+            if case.get("agent_run_json_path"):
+                trace_path = str(case["agent_run_json_path"])
+                trace_paths.append(trace_path)
+                _collect_agent_run_metrics(Path(trace_path), tool_call_counts, repair_attempt_counts)
+            if not case.get("success"):
+                failed_cases.append(
+                    {
+                        "id": case.get("id"),
+                        "mode": case.get("mode"),
+                        "workspace": case.get("workspace"),
+                        "errors": case.get("errors", []),
+                    }
+                )
+    for failure in payload.get("failure_types") or []:
+        if isinstance(failure, dict) and not failure.get("success"):
+            failed_cases.append(
+                {
+                    "id": failure.get("id"),
+                    "mode": "repair",
+                    "workspace": failure.get("workspace"),
+                    "errors": [failure.get("title", "repair failure")],
+                }
+            )
+    metrics = payload.get("metrics") or {}
+    agent_metrics = {
+        "success_rate": metrics.get("best_success_rate", 0),
+        "build_success_rate": metrics.get("build_pass_rate"),
+        "audit_success_rate": max(audit_rates, default=0),
+        "repair_success_rate": metrics.get("repair_rate", 0),
+        "avg_tool_calls": round(sum(tool_call_counts) / len(tool_call_counts), 2) if tool_call_counts else 0,
+        "avg_iterations": round(sum(repair_attempt_counts) / len(repair_attempt_counts), 2) if repair_attempt_counts else 1,
+        "rag_hit_rate": max(rag_rates, default=0),
+        "failed_cases": failed_cases,
+        "trace_paths": trace_paths,
+    }
+    payload["agent_bench_metrics"] = agent_metrics
+    payload.update(agent_metrics)
+    return payload
+
+
+def _collect_agent_run_metrics(
+    trace_path: Path,
+    tool_call_counts: list[int],
+    repair_attempt_counts: list[int],
+) -> None:
+    try:
+        agent_run = json.loads(trace_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    tool_trace_path = agent_run.get("tool_call_trace_json_path")
+    if tool_trace_path:
+        try:
+            tool_trace = json.loads(Path(tool_trace_path).read_text(encoding="utf-8"))
+            if isinstance(tool_trace, list):
+                tool_call_counts.append(len(tool_trace))
+        except (OSError, json.JSONDecodeError):
+            pass
+    if not tool_trace_path:
+        tool_call_counts.append(len(agent_run.get("steps", []) or []))
+    repair_payload = ((agent_run.get("payload") or {}).get("repair") or {})
+    iterations = repair_payload.get("iterations")
+    if isinstance(iterations, int):
+        repair_attempt_counts.append(iterations)
+        return
+    repair_loop = repair_payload.get("repair_loop") or {}
+    attempts_count = repair_loop.get("attempts_count")
+    if isinstance(attempts_count, int):
+        repair_attempt_counts.append(attempts_count)
+    else:
+        repair_attempt_counts.append(1)
 
 
 def _resolve_spec_from_prompt(
@@ -1360,6 +1542,20 @@ def _print_payload(payload: dict, *, as_json: bool) -> None:
 
     if "benchmark_report_json_path" in payload:
         metrics = payload.get("metrics", {})
+        if payload.get("benchmark_kind") == "agent":
+            print(f"agent benchmark: {'success' if payload.get('success') else 'failed'}")
+            print(f"run id: {payload.get('run_id')}")
+            print(f"success rate: {metrics.get('success_rate')}")
+            print(f"audit success rate: {metrics.get('audit_success_rate')}")
+            print(f"repair success rate: {metrics.get('repair_success_rate')}")
+            print(f"avg tool calls: {metrics.get('avg_tool_calls')}")
+            print(f"avg iterations: {metrics.get('avg_iterations')}")
+            print(f"patch accept rate: {metrics.get('patch_accept_rate')}")
+            print(f"rollback count: {metrics.get('rollback_count')}")
+            print(f"benchmark json: {payload.get('benchmark_report_json_path')}")
+            print(f"benchmark report: {payload.get('benchmark_report_md_path')}")
+            print(f"benchmark page: {payload.get('benchmark_report_html_path')}")
+            return
         print(f"benchmark report: {'success' if payload.get('success') else 'failed'}")
         print(f"run id: {payload.get('run_id')}")
         print(f"models completed: {metrics.get('model_runs_completed')}/{metrics.get('model_runs_total')}")

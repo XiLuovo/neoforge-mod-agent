@@ -12,12 +12,14 @@ from .direct_code_agent import DirectCodeAgent, DirectCodeApplyResult, DirectCod
 from .domain_spec import NeoForgeModSpecPlugin
 from .llm_client import check_llm_provider_health, create_llm_client
 from .llm_planner import LLMPlanningError, PlannerArtifacts, plan_with_llm, write_planner_artifacts
+from .llm_reviewer import LLM_REVIEWER_SYSTEM_PROMPT, LLMReviewResult, LLMReviewer
 from .modifier import WorkspaceModifier
 from .models import BuildResult, ModSpec, RequestOverrides
 from .planner import ModProjectPlanner
 from .patch_agent import patch_agent_artifacts, write_patch_agent_report
 from .repair_loop import AutoRepairRunner
 from .repair_rag import RepairRAGAdvisor
+from .tool_calling_agent import ToolCallingRepairAgent
 from .tools import ensure_directory, slugify_mod_id, write_generation_summary, write_json, write_text
 from .validator import validate_mod_spec
 
@@ -29,6 +31,13 @@ class AgentOrchestrator:
         self.auditor = WorkspaceAuditor(self.config)
         self.repair_runner = AutoRepairRunner(self.config)
         self.repair_rag_advisor = RepairRAGAdvisor(self.config)
+        self.tool_calling_repair_agent = ToolCallingRepairAgent(
+            self.config,
+            auditor=self.auditor,
+            builder=self.planner.builder,
+            repair_runner=self.repair_runner,
+        )
+        self.llm_reviewer = LLMReviewer(self.config)
         self.direct_code_agent = DirectCodeAgent(self.config)
         self.trace_writer = AgentTraceWriter(self.config)
         self.runtime = AgentRuntime(NeoForgeRuntimePlugin(self), self.trace_writer)
@@ -47,6 +56,7 @@ class AgentOrchestrator:
         repair: bool = True,
         require_llm: bool = False,
         code_lane: str = "hybrid",
+        max_iterations: int = 1,
     ) -> AgentRunResult:
         return self.runtime.run_generate(
             AgentRuntimeRequest(
@@ -63,6 +73,43 @@ class AgentOrchestrator:
                     "overwrite": overwrite,
                     "require_llm": require_llm,
                     "code_lane": code_lane,
+                    "max_iterations": max_iterations,
+                },
+            )
+        )
+
+    def run_develop(
+        self,
+        request: str,
+        *,
+        overrides: RequestOverrides | None = None,
+        planner_mode: str = "llm",
+        llm_provider: str = "mock",
+        workspace_name: str | None = None,
+        overwrite: bool = False,
+        run_build: bool = False,
+        run_audit: bool = True,
+        repair: bool = True,
+        require_llm: bool = False,
+        code_lane: str = "hybrid",
+        max_iterations: int = 5,
+    ) -> AgentRunResult:
+        return self.runtime.run_generate(
+            AgentRuntimeRequest(
+                mode="develop",
+                request=request,
+                planner_mode=planner_mode,
+                llm_provider=llm_provider,
+                run_build=run_build,
+                run_audit=run_audit,
+                repair=repair,
+                options={
+                    "overrides": overrides or RequestOverrides(),
+                    "workspace_name": workspace_name,
+                    "overwrite": overwrite,
+                    "require_llm": require_llm,
+                    "code_lane": code_lane,
+                    "max_iterations": max_iterations,
                 },
             )
         )
@@ -78,6 +125,7 @@ class AgentOrchestrator:
         run_audit: bool = True,
         repair: bool = True,
         code_lane: str = "hybrid",
+        max_iterations: int = 1,
     ) -> AgentRunResult:
         workspace = workspace.resolve()
         code_lane = _normalize_code_lane(code_lane)
@@ -266,6 +314,7 @@ class AgentOrchestrator:
             repair=repair,
             steps=steps,
             decisions=decisions,
+            max_attempts=max_iterations,
         )
         success = result.success and self._audit_success(audit_payload)
         if direct_code_result is not None:
@@ -342,6 +391,212 @@ class AgentOrchestrator:
                 "repair": repair_payload,
                 "patch_agent": modify_payload["patch_agent"],
                 **({"direct_code": direct_code_payload} if direct_code_payload is not None else {}),
+            },
+        )
+        self._write_agent_run(run)
+        return run
+
+    def run_repair(
+        self,
+        workspace: Path,
+        *,
+        goal: str = "Fix build and audit failures without changing user-owned files.",
+        planner_mode: str = "llm",
+        llm_provider: str = "mock",
+        max_iterations: int = 5,
+        run_build: bool = True,
+        run_audit: bool = True,
+    ) -> AgentRunResult:
+        workspace = workspace.resolve()
+        steps: list[AgentStep] = [
+            AgentStep(
+                role="context_loader",
+                status="pass",
+                summary="Loaded existing workspace for agent repair.",
+                details={"workspace": str(workspace), "goal": goal},
+            )
+        ]
+        decisions: list[AgentDecision] = [
+            AgentDecision(
+                role="context_loader",
+                decision="load_existing_workspace",
+                rationale="Agent repair works from the existing workspace and keeps .agent/modspec.json as the managed-file truth source.",
+                inputs=[str(workspace), "repair_goal"],
+                outputs=["workspace_context"],
+            )
+        ]
+
+        build = (
+            self.planner.builder.build(workspace, repair=True)
+            if run_build
+            else BuildResult(attempted=False, success=None, summary="Gradle build was not executed.")
+        )
+        build_payload = build.to_dict()
+        steps.append(
+            AgentStep(
+                role="builder_agent",
+                status="pass" if build.success is not False else "fail",
+                summary="Ran Gradle build before repair." if run_build else "Skipped Gradle build before repair.",
+                details=build_payload,
+                errors=[] if build.success is not False else [build.summary or "Build failed."],
+            )
+        )
+        decisions.append(
+            AgentDecision(
+                role="builder_agent",
+                decision="run_build_check" if run_build else "skip_build_check",
+                rationale="Agent repair observes build output before selecting a repair action when build validation is enabled.",
+                status="pass" if build.success is not False else "fail",
+                inputs=["workspace"],
+                outputs=[f"build_success={build.success}"],
+            )
+        )
+
+        audit_payload = self._run_audit_step(workspace, run_audit, steps, decisions)
+        root_causes = self._repair_root_causes(build_payload, audit_payload)
+        repair_plan = self._repair_plan_actions(build_payload, audit_payload, root_causes)
+        try:
+            tool_result = self.tool_calling_repair_agent.run(
+                workspace,
+                goal=goal,
+                llm_provider=llm_provider,
+                max_iterations=max_iterations,
+                run_build=run_build,
+                run_audit=run_audit,
+                initial_build=build_payload,
+                initial_audit=audit_payload,
+                root_causes=root_causes,
+                repair_plan=repair_plan,
+            )
+            repair_payload = tool_result.to_dict()
+            steps.append(
+                AgentStep(
+                    role="repair_agent",
+                    status="pass" if tool_result.success else "fail",
+                    summary=(
+                        "Executed LLM tool-calling repair loop."
+                        if tool_result.success
+                        else "LLM tool-calling repair loop did not pass requested gates."
+                    ),
+                    details={
+                        "action": "tool_calling_repair_loop",
+                        "tool_calls_count": tool_result.iterations,
+                        "repair_success": tool_result.repair_success,
+                        "final_build": tool_result.final_build,
+                        "final_audit": tool_result.final_audit,
+                    },
+                    errors=[] if tool_result.success else self._repair_root_causes(tool_result.final_build, tool_result.final_audit),
+                )
+            )
+            decisions.append(
+                AgentDecision(
+                    role="repair_agent",
+                    decision="execute_tool_calling_repair_loop",
+                    rationale="The repair agent called the LLM after initial observations and executed only structured tools inside the workspace safety boundary.",
+                    status="pass" if tool_result.success else "fail",
+                    inputs=["repair_goal", "build_observation", "audit_observation"],
+                    outputs=[
+                        f"tool_calls={tool_result.iterations}",
+                        f"repair_executed={tool_result.repair_executed}",
+                        f"repair_success={tool_result.repair_success}",
+                    ],
+                    knowledge_refs=self._knowledge_refs_from_repair_rag(repair_payload.get("repair_rag") or {}),
+                )
+            )
+            prompt_traces = list(tool_result.prompt_traces)
+            final_build_payload = repair_payload.get("final_build", build_payload)
+            final_audit_payload = repair_payload.get("final_audit", audit_payload)
+            success = tool_result.success
+            reviewer_result = self._run_llm_reviewer(
+                workspace=workspace,
+                user_goal=goal,
+                llm_provider=llm_provider,
+                review_stage="repair_final",
+                intent_contract=None,
+                modspec=self._load_modspec_dict(workspace),
+                rag=repair_payload.get("repair_rag") or {},
+                tool_call_trace=repair_payload.get("tool_call_trace") or [],
+                changed_files=self._changed_files_from_repair_payload(repair_payload),
+                audit_result=final_audit_payload,
+                build_result=final_build_payload,
+                steps=steps,
+                decisions=decisions,
+            )
+            repair_payload["reviewer"] = reviewer_result.to_dict()
+            prompt_traces = [*prompt_traces, reviewer_result.prompt_trace]
+        except Exception as exc:  # Tool-calling repair failures must be replayable in agent-run.json.
+            error_text = f"{type(exc).__name__}: {exc}"
+            repair_payload = {
+                "attempted": True,
+                "repair_needed": bool(root_causes),
+                "repair_executed": False,
+                "repair_success": False,
+                "root_causes": root_causes or [error_text],
+                "repair_plan": repair_plan,
+                "initial_build": build_payload,
+                "initial_audit": audit_payload,
+                "final_build": build_payload,
+                "final_audit": audit_payload,
+                "tool_call_trace": [
+                    {
+                        "iteration": 1,
+                        "role": "repair_agent",
+                        "source": "tool_error",
+                        "action": "finish",
+                        "args": {"status": "failed"},
+                        "thought_summary": "Tool-calling repair could not start.",
+                        "observation": {"success": False, "summary": error_text},
+                    }
+                ],
+                "errors": [error_text],
+            }
+            steps.append(
+                AgentStep(
+                    role="repair_agent",
+                    status="fail",
+                    summary="Tool-calling repair failed before completion.",
+                    details=repair_payload,
+                    errors=[error_text],
+                )
+            )
+            decisions.append(
+                AgentDecision(
+                    role="repair_agent",
+                    decision="execute_tool_calling_repair_loop",
+                    rationale="The repair agent attempted to start the LLM tool loop but encountered a normalized runtime failure.",
+                    status="fail",
+                    inputs=["repair_goal", "build_observation", "audit_observation"],
+                    outputs=[error_text],
+                )
+            )
+            prompt_traces = []
+            final_build_payload = build_payload
+            final_audit_payload = audit_payload
+            success = False
+
+        run = AgentRunResult(
+            success=success,
+            mode="repair",
+            request=goal,
+            planner_mode=planner_mode,
+            llm_provider=llm_provider,
+            workspace=workspace,
+            steps=steps,
+            decisions=decisions,
+            prompt_traces=prompt_traces,
+            payload={
+                "runtime": {
+                    "domain": "neoforge",
+                    "stages": ["context_loader", "builder", "auditor", "tool_calling_repair"],
+                    "max_iterations": max_iterations,
+                },
+                "goal": goal,
+                "initial_build": build_payload,
+                "initial_audit": audit_payload,
+                "build": final_build_payload,
+                "audit": final_audit_payload,
+                "repair": repair_payload,
+                "reviewer": repair_payload.get("reviewer"),
             },
         )
         self._write_agent_run(run)
@@ -578,6 +833,133 @@ class AgentOrchestrator:
         )
         return payload
 
+    def _run_llm_reviewer(
+        self,
+        *,
+        workspace: Path | None,
+        user_goal: str,
+        llm_provider: str,
+        review_stage: str,
+        intent_contract: dict[str, Any] | None,
+        modspec: dict[str, Any] | None,
+        rag: dict[str, Any] | None,
+        tool_call_trace: list[dict[str, Any]] | None,
+        changed_files: list[str] | None,
+        audit_result: dict[str, Any] | None,
+        build_result: dict[str, Any] | None,
+        steps: list[AgentStep],
+        decisions: list[AgentDecision],
+        prior_reviewer_observation: dict[str, Any] | None = None,
+    ) -> LLMReviewResult:
+        try:
+            result = self.llm_reviewer.review(
+                workspace=workspace,
+                user_goal=user_goal,
+                llm_provider=llm_provider,
+                review_stage=review_stage,
+                intent_contract=intent_contract,
+                modspec=modspec,
+                rag=rag,
+                tool_call_trace=tool_call_trace,
+                changed_files=changed_files,
+                audit_result=audit_result,
+                build_result=build_result,
+                prior_reviewer_observation=prior_reviewer_observation,
+            )
+        except Exception as exc:
+            error_text = f"{type(exc).__name__}: {exc}"
+            report = {
+                "coverage_status": "partial",
+                "covered_requirements": [],
+                "missing_requirements": [],
+                "unsupported_or_risky_requests": [],
+                "patch_risks": [error_text],
+                "recommended_checks": ["Inspect reviewer provider configuration and rerun review."],
+                "decision": "needs_repair",
+                "confidence": 0.0,
+            }
+            result = LLMReviewResult(
+                success=False,
+                reviewer_report=report,
+                prompt_trace=AgentPromptTrace(
+                    role="reviewer_agent",
+                    planner_mode="llm_reviewer",
+                    provider=llm_provider,
+                    prompt_kind=f"reviewer_{review_stage}",
+                    system_prompt=LLM_REVIEWER_SYSTEM_PROMPT,
+                    input_text=user_goal,
+                    normalized_json=report,
+                    warnings=[error_text],
+                    error=error_text,
+                ),
+                provider=llm_provider,
+                model="",
+                warnings=[error_text],
+            )
+        self._append_llm_reviewer_trace(result, steps, decisions, review_stage=review_stage)
+        return result
+
+    def _append_llm_reviewer_trace(
+        self,
+        result: LLMReviewResult,
+        steps: list[AgentStep],
+        decisions: list[AgentDecision],
+        *,
+        review_stage: str,
+    ) -> None:
+        report = result.to_dict()
+        status = "pass" if report.get("decision") == "approve" else "warning" if report.get("decision") == "needs_repair" else "fail"
+        steps.append(
+            AgentStep(
+                role="reviewer_agent",
+                status=status,
+                summary=f"LLM reviewer {report.get('decision')} with {report.get('coverage_status')} coverage.",
+                details={
+                    "review_stage": review_stage,
+                    "decision": report.get("decision"),
+                    "coverage_status": report.get("coverage_status"),
+                    "confidence": report.get("confidence"),
+                    "source": "llm_reviewer",
+                },
+                warnings=[*report.get("missing_requirements", []), *report.get("patch_risks", [])],
+                errors=report.get("unsupported_or_risky_requests", []) if status == "fail" else [],
+            )
+        )
+        decisions.append(
+            AgentDecision(
+                role="reviewer_agent",
+                decision=f"llm_review_{report.get('decision')}",
+                rationale="The LLM reviewer checks requirement coverage, unsupported requests, patch risk, and residual audit/build risk without overriding deterministic gates.",
+                status=status,
+                inputs=["user_goal", "intent_contract", "modspec", "tool_trace", "audit_result", "build_result"],
+                outputs=[
+                    f"coverage_status={report.get('coverage_status')}",
+                    f"decision={report.get('decision')}",
+                    f"confidence={report.get('confidence')}",
+                ],
+            )
+        )
+
+    def _load_modspec_dict(self, workspace: Path) -> dict[str, Any]:
+        path = workspace / ".agent" / "modspec.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _changed_files_from_repair_payload(self, payload: dict[str, Any]) -> list[str]:
+        files: list[str] = []
+        structured = payload.get("structured_patch") if isinstance(payload, dict) else {}
+        if isinstance(structured, dict):
+            files.extend(str(item) for item in structured.get("changed_files", []) if str(item))
+        repair_loop = payload.get("repair_loop") if isinstance(payload, dict) else {}
+        if isinstance(repair_loop, dict):
+            for attempt in repair_loop.get("attempts", []) or []:
+                if isinstance(attempt, dict):
+                    files.extend(str(item) for item in attempt.get("changed_files", []) if str(item))
+        return sorted(set(files))
+
     def _run_repair_analysis_step(
         self,
         workspace: Path,
@@ -587,6 +969,7 @@ class AgentOrchestrator:
         repair: bool,
         steps: list[AgentStep],
         decisions: list[AgentDecision],
+        max_attempts: int = 1,
     ) -> dict:
         build_failed = build_payload.get("attempted") and build_payload.get("success") is False
         audit_failed = audit_payload.get("attempted") and audit_payload.get("success") is False
@@ -639,7 +1022,7 @@ class AgentOrchestrator:
         if repair:
             repair_loop_result = self.repair_runner.run(
                 workspace,
-                max_attempts=1,
+                max_attempts=max_attempts,
                 run_build=bool(build_payload.get("attempted")),
                 run_audit=bool(audit_payload.get("attempted")),
             )
@@ -1495,7 +1878,13 @@ class NeoForgeRuntimePlugin:
         execution_success = result.succeeded and (direct_code_result.success if direct_code_result is not None else True)
         return AgentRuntimeStageResult(
             success=execution_success,
-            state={"generation": result, "direct_code": direct_code_result},
+            state={
+                "generation": result,
+                "direct_code": direct_code_result,
+                "spec": spec,
+                "intent_contract": plan.state.get("intent_contract") if isinstance(plan.state, dict) else None,
+                "planner_artifacts": artifacts,
+            },
             workspace=result.workspace_dir,
             payload=execution_payload,
             build_payload=execution_payload.get("build", {}),
@@ -1602,6 +1991,221 @@ class NeoForgeRuntimePlugin:
                 "reason": "Execution did not produce a workspace.",
             }
             return AgentRuntimeStageResult(success=True, steps=steps, decisions=decisions, payload=payload)
+        if request.mode == "develop" and request.repair:
+            spec = execution.state.get("spec") if isinstance(execution.state, dict) else None
+            intent_contract = execution.state.get("intent_contract") if isinstance(execution.state, dict) else None
+            root_causes = self.orchestrator._repair_root_causes(execution.build_payload, audit.payload)
+            repair_plan = self.orchestrator._repair_plan_actions(execution.build_payload, audit.payload, root_causes)
+            try:
+                baseline_reviewer = self.orchestrator._run_llm_reviewer(
+                    workspace=execution.workspace,
+                    user_goal=request.request,
+                    llm_provider=request.llm_provider,
+                    review_stage="develop_baseline",
+                    intent_contract=intent_contract if isinstance(intent_contract, dict) else None,
+                    modspec=spec.to_dict() if isinstance(spec, ModSpec) else None,
+                    rag={},
+                    tool_call_trace=[],
+                    changed_files=list(execution.payload.get("generated_files", [])),
+                    audit_result=audit.payload,
+                    build_result=execution.build_payload,
+                    steps=steps,
+                    decisions=decisions,
+                )
+                tool_result = self.orchestrator.tool_calling_repair_agent.run(
+                    execution.workspace,
+                    goal=request.request,
+                    llm_provider=request.llm_provider,
+                    max_iterations=int(request.options.get("max_iterations", 1) or 1),
+                    run_build=request.run_build,
+                    run_audit=request.run_audit,
+                    initial_build=execution.build_payload,
+                    initial_audit=audit.payload,
+                    root_causes=root_causes,
+                    repair_plan=repair_plan,
+                    loop_purpose="develop_refine",
+                    extra_context={
+                        "mode": request.mode,
+                        "baseline_modspec": spec.to_dict() if isinstance(spec, ModSpec) else None,
+                        "intent_contract": intent_contract,
+                        "baseline_generation": execution.payload,
+                        "baseline_reviewer_observation": baseline_reviewer.to_dict(),
+                    },
+                )
+                payload = tool_result.to_dict()
+                steps.append(
+                    AgentStep(
+                        role="repair_agent",
+                        status="pass" if tool_result.success else "fail",
+                        summary=(
+                            "Executed LLM tool-calling develop refinement loop."
+                            if tool_result.success
+                            else "LLM tool-calling develop refinement loop did not pass requested gates."
+                        ),
+                        details={
+                            "action": "tool_calling_develop_refine_loop",
+                            "tool_calls_count": tool_result.iterations,
+                            "repair_success": tool_result.repair_success,
+                            "final_build": tool_result.final_build,
+                            "final_audit": tool_result.final_audit,
+                        },
+                        errors=[] if tool_result.success else self.orchestrator._repair_root_causes(tool_result.final_build, tool_result.final_audit),
+                    )
+                )
+                decisions.append(
+                    AgentDecision(
+                        role="repair_agent",
+                        decision="execute_tool_calling_develop_refine_loop",
+                        rationale="Develop mode generated a deterministic baseline, then used the same constrained LLM tool loop to inspect, patch, and verify the workspace inside the generated-workspace boundary.",
+                        status="pass" if tool_result.success else "fail",
+                        inputs=["development_goal", "baseline_modspec", "build_observation", "audit_observation"],
+                        outputs=[
+                            f"tool_calls={tool_result.iterations}",
+                            f"repair_executed={tool_result.repair_executed}",
+                            f"repair_success={tool_result.repair_success}",
+                        ],
+                        knowledge_refs=self.orchestrator._knowledge_refs_from_repair_rag(payload.get("repair_rag") or {}),
+                    )
+                )
+                prompt_traces = [baseline_reviewer.prompt_trace, *tool_result.prompt_traces]
+                final_reviewer = self.orchestrator._run_llm_reviewer(
+                    workspace=execution.workspace,
+                    user_goal=request.request,
+                    llm_provider=request.llm_provider,
+                    review_stage="develop_final",
+                    intent_contract=intent_contract if isinstance(intent_contract, dict) else None,
+                    modspec=spec.to_dict() if isinstance(spec, ModSpec) else None,
+                    rag=payload.get("repair_rag") or {},
+                    tool_call_trace=payload.get("tool_call_trace") or [],
+                    changed_files=self.orchestrator._changed_files_from_repair_payload(payload),
+                    audit_result=payload.get("final_audit") or audit.payload,
+                    build_result=payload.get("final_build") or execution.build_payload,
+                    steps=steps,
+                    decisions=decisions,
+                    prior_reviewer_observation=baseline_reviewer.to_dict(),
+                )
+                payload["baseline_reviewer"] = baseline_reviewer.to_dict()
+                payload["reviewer"] = final_reviewer.to_dict()
+                prompt_traces.append(final_reviewer.prompt_trace)
+                max_iterations = int(request.options.get("max_iterations", 1) or 1)
+                if final_reviewer.decision == "needs_repair" and tool_result.iterations < max_iterations:
+                    followup_result = self.orchestrator.tool_calling_repair_agent.run(
+                        execution.workspace,
+                        goal=request.request,
+                        llm_provider=request.llm_provider,
+                        max_iterations=max_iterations - tool_result.iterations,
+                        run_build=request.run_build,
+                        run_audit=request.run_audit,
+                        initial_build=payload.get("final_build") or execution.build_payload,
+                        initial_audit=payload.get("final_audit") or audit.payload,
+                        root_causes=root_causes,
+                        repair_plan=repair_plan,
+                        loop_purpose="develop_refine",
+                        extra_context={
+                            "mode": request.mode,
+                            "baseline_modspec": spec.to_dict() if isinstance(spec, ModSpec) else None,
+                            "intent_contract": intent_contract,
+                            "baseline_generation": execution.payload,
+                            "reviewer_observation": final_reviewer.to_dict(),
+                        },
+                    )
+                    payload["reviewer_requested_repair"] = followup_result.to_dict()
+                    payload["final_build"] = followup_result.final_build
+                    payload["final_audit"] = followup_result.final_audit
+                    payload["success"] = followup_result.success
+                    payload["repair_success"] = followup_result.repair_success
+                    combined_tool_trace = [
+                        *list(payload.get("tool_call_trace") or []),
+                        *list(followup_result.trace),
+                    ]
+                    payload["tool_call_trace"] = combined_tool_trace
+                    payload["tool_calls_count"] = len(combined_tool_trace)
+                    payload["iterations"] = len(combined_tool_trace)
+                    payload["repair_executed"] = bool(payload.get("repair_executed")) or followup_result.repair_executed
+                    if followup_result.structured_patch:
+                        payload["structured_patch"] = followup_result.structured_patch
+                    if followup_result.repair_rag:
+                        payload["repair_rag"] = followup_result.repair_rag
+                    prompt_traces.extend(followup_result.prompt_traces)
+                    final_reviewer = self.orchestrator._run_llm_reviewer(
+                        workspace=execution.workspace,
+                        user_goal=request.request,
+                        llm_provider=request.llm_provider,
+                        review_stage="develop_final_after_repair",
+                        intent_contract=intent_contract if isinstance(intent_contract, dict) else None,
+                        modspec=spec.to_dict() if isinstance(spec, ModSpec) else None,
+                        rag=payload.get("repair_rag") or {},
+                        tool_call_trace=payload.get("tool_call_trace") or [],
+                        changed_files=self.orchestrator._changed_files_from_repair_payload(payload),
+                        audit_result=payload.get("final_audit") or audit.payload,
+                        build_result=payload.get("final_build") or execution.build_payload,
+                        steps=steps,
+                        decisions=decisions,
+                        prior_reviewer_observation=final_reviewer.to_dict(),
+                    )
+                    payload["reviewer"] = final_reviewer.to_dict()
+                    prompt_traces.append(final_reviewer.prompt_trace)
+                return AgentRuntimeStageResult(
+                    success=bool(payload.get("success")),
+                    steps=steps,
+                    decisions=decisions,
+                    prompt_traces=prompt_traces,
+                    payload=payload,
+                    workspace=execution.workspace,
+                )
+            except Exception as exc:
+                error_text = f"{type(exc).__name__}: {exc}"
+                payload = {
+                    "attempted": True,
+                    "loop_purpose": "develop_refine",
+                    "repair_needed": bool(root_causes),
+                    "repair_executed": False,
+                    "repair_success": False,
+                    "root_causes": root_causes or [error_text],
+                    "repair_plan": repair_plan,
+                    "initial_build": execution.build_payload,
+                    "initial_audit": audit.payload,
+                    "final_build": execution.build_payload,
+                    "final_audit": audit.payload,
+                    "tool_call_trace": [
+                        {
+                            "iteration": 1,
+                            "role": "repair_agent",
+                            "source": "tool_error",
+                            "action": "finish",
+                            "args": {"status": "failed"},
+                            "thought_summary": "Develop refinement tool loop could not start.",
+                            "observation": {"success": False, "summary": error_text},
+                        }
+                    ],
+                    "errors": [error_text],
+                }
+                steps.append(
+                    AgentStep(
+                        role="repair_agent",
+                        status="fail",
+                        summary="Tool-calling develop refinement failed before completion.",
+                        details=payload,
+                        errors=[error_text],
+                    )
+                )
+                decisions.append(
+                    AgentDecision(
+                        role="repair_agent",
+                        decision="execute_tool_calling_develop_refine_loop",
+                        rationale="Develop mode attempted to start the constrained LLM tool loop after baseline generation but encountered a normalized runtime failure.",
+                        status="fail",
+                        inputs=["development_goal", "baseline_modspec", "build_observation", "audit_observation"],
+                        outputs=[error_text],
+                    )
+                )
+                return AgentRuntimeStageResult(
+                    success=False,
+                    steps=steps,
+                    decisions=decisions,
+                    payload=payload,
+                    workspace=execution.workspace,
+                )
         payload = self.orchestrator._run_repair_analysis_step(
             execution.workspace,
             build_payload=execution.build_payload,
@@ -1609,6 +2213,7 @@ class NeoForgeRuntimePlugin:
             repair=request.repair,
             steps=steps,
             decisions=decisions,
+            max_attempts=int(request.options.get("max_iterations", 1) or 1),
         )
         stage_success = True
         if payload.get("repair_needed"):
@@ -1632,6 +2237,8 @@ class NeoForgeRuntimePlugin:
         direct_code_result = execution.state.get("direct_code") if isinstance(execution.state, dict) else None
         if isinstance(direct_code_result, DirectCodeApplyResult):
             success = success and direct_code_result.success
+        if request.mode == "develop" and repair.payload.get("attempted"):
+            success = success and bool(repair.payload.get("success"))
         if repair.payload.get("repair_needed") and not isinstance(direct_code_result, DirectCodeApplyResult):
             success = bool(repair.payload.get("repair_success"))
         return success

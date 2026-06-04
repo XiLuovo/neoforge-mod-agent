@@ -154,6 +154,9 @@ class AgentRunResult:
     prompt_trace_json_path: Path | None = None
     agent_trace_summary_json_path: Path | None = None
     agent_trace_summary_md_path: Path | None = None
+    tool_call_trace_json_path: Path | None = None
+    reviewer_report_json_path: Path | None = None
+    reviewer_report_md_path: Path | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -173,4 +176,7 @@ class AgentRunResult:
             "prompt_trace_json_path": _serialize(self.prompt_trace_json_path),
             "agent_trace_summary_json_path": _serialize(self.agent_trace_summary_json_path),
             "agent_trace_summary_md_path": _serialize(self.agent_trace_summary_md_path),
+            "tool_call_trace_json_path": _serialize(self.tool_call_trace_json_path),
+            "reviewer_report_json_path": _serialize(self.reviewer_report_json_path),
+            "reviewer_report_md_path": _serialize(self.reviewer_report_md_path),
         }

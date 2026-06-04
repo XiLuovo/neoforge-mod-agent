@@ -119,6 +119,9 @@ class AgentEvalTests(unittest.TestCase):
             self.assertTrue((result.workspace / ".agent" / "prompt-trace.json").exists())
             self.assertTrue((result.workspace / ".agent" / "agent-trace-summary.json").exists())
             self.assertTrue((result.workspace / ".agent" / "agent-trace-summary.md").exists())
+            self.assertTrue((result.workspace / ".agent" / "tool-call-trace.json").exists())
+            self.assertTrue((result.workspace / ".agent" / "reviewer-report.json").exists())
+            self.assertTrue((result.workspace / ".agent" / "reviewer-report.md").exists())
             self.assertGreaterEqual(len(result.decisions), 4)
             self.assertEqual(len(result.prompt_traces), 1)
             self.assertIn("normalized_json", result.prompt_traces[0].to_dict())
@@ -138,6 +141,153 @@ class AgentEvalTests(unittest.TestCase):
             self.assertTrue(planner_decisions[0].to_dict()["knowledge_ids"])
             decisions_md = (result.workspace / ".agent" / "agent-decisions.md").read_text(encoding="utf-8")
             self.assertIn("knowledge ids", decisions_md)
+
+    def test_agent_develop_records_coding_agent_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+            orchestrator = AgentOrchestrator(config)
+
+            result = orchestrator.run_develop(
+                "Create a ruby tech mod with ruby ore and recipes.",
+                planner_mode="llm",
+                llm_provider="mock",
+                workspace_name="agent-develop-ruby-tech",
+                overwrite=True,
+                run_build=False,
+                run_audit=True,
+                repair=True,
+                max_iterations=5,
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.mode, "develop")
+            self.assertIsNotNone(result.workspace)
+            agent_run = json.loads((result.workspace / ".agent" / "agent-run.json").read_text(encoding="utf-8"))
+            self.assertEqual(agent_run["mode"], "develop")
+            self.assertEqual(agent_run["payload"]["runtime"]["stages"], ["planner", "reviewer", "executor", "auditor", "repair"])
+            self.assertEqual(agent_run["payload"]["repair"]["loop_purpose"], "develop_refine")
+            self.assertTrue(agent_run["payload"]["repair"]["tool_call_trace"])
+            self.assertEqual(agent_run["payload"]["repair"]["iterations"], 5)
+            self.assertEqual(agent_run["payload"]["repair"]["success"], True)
+            self.assertEqual(agent_run["payload"]["repair"]["final_audit"]["success"], True)
+            self.assertGreaterEqual(len(agent_run["prompt_traces"]), 6)
+            self.assertIn("planner_agent", {trace["role"] for trace in agent_run["prompt_traces"]})
+            self.assertIn("repair_agent", {trace["role"] for trace in agent_run["prompt_traces"]})
+            self.assertIn("reviewer_agent", {trace["role"] for trace in agent_run["prompt_traces"]})
+            tool_trace = json.loads((result.workspace / ".agent" / "tool-call-trace.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                [entry["action"] for entry in tool_trace],
+                ["retrieve_rag", "read_file", "apply_structured_patch", "run_audit", "finish"],
+            )
+            self.assertTrue(all(entry.get("source") == "llm" for entry in tool_trace))
+            self.assertNotIn("agent_step", {entry.get("source") for entry in tool_trace})
+            self.assertIn("(develop refined)", (result.workspace / "src" / "main" / "resources" / "pack.mcmeta").read_text(encoding="utf-8"))
+            self.assertTrue((result.workspace / ".agent" / "structured-patch-report.json").exists())
+            self.assertTrue((result.workspace / ".agent" / "structured-patch-rollback-report.json").exists())
+            snapshots = list((result.workspace / ".agent" / "structured-patch-snapshots").rglob("pack.mcmeta"))
+            self.assertTrue(snapshots)
+            reviewer = json.loads((result.workspace / ".agent" / "reviewer-report.json").read_text(encoding="utf-8"))
+            self.assertEqual(reviewer["source"], "llm_reviewer")
+            self.assertEqual(reviewer["decision"], "approve")
+            self.assertEqual(reviewer["coverage_status"], "pass")
+            self.assertEqual(reviewer["status"], "pass")
+            self.assertTrue(reviewer["checks"])
+            self.assertEqual(agent_run["payload"]["repair"]["reviewer"]["source"], "llm_reviewer")
+            self.assertEqual(agent_run["payload"]["evidence"]["reviewer_source"], "llm_reviewer")
+            self.assertEqual(agent_run["payload"]["evidence"]["reviewer_decision"], "approve")
+            self.assertEqual(agent_run["payload"]["evidence"]["reviewer_coverage_status"], "pass")
+            self.assertTrue(agent_run["payload"]["evidence"]["reviewer_report_json_path"].endswith("reviewer-report.json"))
+            reviewer_traces = [trace for trace in agent_run["prompt_traces"] if trace["role"] == "reviewer_agent"]
+            self.assertTrue(any(trace["prompt_kind"].startswith("reviewer_") for trace in reviewer_traces))
+
+    def test_agent_develop_reviewer_needs_repair_feeds_followup_loop(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+            orchestrator = AgentOrchestrator(config)
+
+            result = orchestrator.run_develop(
+                "Create a ruby tech mod with ruby ore and recipes; reviewer needs repair.",
+                planner_mode="llm",
+                llm_provider="mock",
+                workspace_name="agent-develop-reviewer-repair",
+                overwrite=True,
+                run_build=False,
+                run_audit=True,
+                repair=True,
+                max_iterations=6,
+            )
+
+            self.assertTrue(result.success)
+            self.assertIsNotNone(result.workspace)
+            agent_run = json.loads((result.workspace / ".agent" / "agent-run.json").read_text(encoding="utf-8"))
+            repair_payload = agent_run["payload"]["repair"]
+            self.assertIn("reviewer_requested_repair", repair_payload)
+            self.assertEqual(repair_payload["reviewer"]["source"], "llm_reviewer")
+            self.assertEqual(repair_payload["reviewer"]["decision"], "needs_repair")
+            self.assertEqual(repair_payload["reviewer"]["coverage_status"], "partial")
+            self.assertEqual(repair_payload["tool_calls_count"], len(repair_payload["tool_call_trace"]))
+            self.assertGreater(repair_payload["tool_calls_count"], 5)
+            self.assertEqual(
+                [entry["action"] for entry in repair_payload["tool_call_trace"][:5]],
+                ["retrieve_rag", "read_file", "apply_structured_patch", "run_audit", "finish"],
+            )
+            self.assertTrue(
+                any(
+                    trace["role"] == "repair_agent"
+                    and "reviewer_observation" in trace["input_text"]
+                    and "Reviewer requested one additional constrained refinement pass" in trace["input_text"]
+                    for trace in agent_run["prompt_traces"]
+                )
+            )
+            reviewer_traces = [trace for trace in agent_run["prompt_traces"] if trace["role"] == "reviewer_agent"]
+            self.assertTrue(any(trace["normalized_json"]["decision"] == "needs_repair" for trace in reviewer_traces))
+
+    def test_agent_repair_existing_workspace_uses_safe_loop(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+            orchestrator = AgentOrchestrator(config)
+            setup = orchestrator.run_generate(
+                "Create a ruby mod with ruby.",
+                planner_mode="llm",
+                llm_provider="mock",
+                workspace_name="agent-repair-existing",
+                overwrite=True,
+                run_build=False,
+                run_audit=True,
+                repair=True,
+            )
+            self.assertTrue(setup.success)
+            self.assertIsNotNone(setup.workspace)
+
+            model_path = (
+                setup.workspace
+                / "src"
+                / "main"
+                / "resources"
+                / "assets"
+                / "ruby_mod"
+                / "models"
+                / "item"
+                / "ruby.json"
+            )
+            model_path.unlink()
+
+            result = orchestrator.run_repair(
+                setup.workspace,
+                goal="Fix audit failures without changing user-owned files.",
+                planner_mode="llm",
+                llm_provider="mock",
+                max_iterations=2,
+                run_build=False,
+                run_audit=True,
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.mode, "repair")
+            self.assertTrue(model_path.exists())
+            self.assertTrue((setup.workspace / ".agent" / "agent-run.json").exists())
+            self.assertTrue((setup.workspace / ".agent" / "repair-loop-report.json").exists())
+            self.assertTrue((setup.workspace / ".agent" / "tool-call-trace.json").exists())
 
     def test_agent_generate_modspec_lane_does_not_write_direct_code_artifacts(self) -> None:
         with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:

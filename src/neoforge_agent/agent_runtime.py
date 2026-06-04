@@ -189,16 +189,40 @@ class AgentTraceWriter:
         prompt_trace_json_path = agent_dir / "prompt-trace.json"
         trace_summary_json_path = agent_dir / "agent-trace-summary.json"
         trace_summary_md_path = agent_dir / "agent-trace-summary.md"
+        tool_call_trace_json_path = agent_dir / "tool-call-trace.json"
+        reviewer_report_json_path = agent_dir / "reviewer-report.json"
+        reviewer_report_md_path = agent_dir / "reviewer-report.md"
         run.agent_run_json_path = json_path
         run.agent_run_md_path = md_path
         run.agent_decisions_md_path = decisions_md_path
         run.prompt_trace_json_path = prompt_trace_json_path
         run.agent_trace_summary_json_path = trace_summary_json_path
         run.agent_trace_summary_md_path = trace_summary_md_path
+        run.tool_call_trace_json_path = tool_call_trace_json_path
+        run.reviewer_report_json_path = reviewer_report_json_path
+        run.reviewer_report_md_path = reviewer_report_md_path
         trace_summary = self.agent_trace_summary(run)
+        tool_call_trace = self.tool_call_trace(run)
+        reviewer_report = self.reviewer_report(run)
+        evidence = dict(run.payload.get("evidence") or {})
+        evidence.update(
+            {
+                "prompt_trace_json_path": str(prompt_trace_json_path),
+                "tool_call_trace_json_path": str(tool_call_trace_json_path),
+                "tool_calls_count": len(tool_call_trace),
+                "reviewer_report_json_path": str(reviewer_report_json_path),
+                "reviewer_decision": reviewer_report.get("decision"),
+                "reviewer_coverage_status": reviewer_report.get("coverage_status"),
+                "reviewer_source": reviewer_report.get("source"),
+            }
+        )
+        run.payload["evidence"] = evidence
         write_text(md_path, self.render_agent_run_md(run))
         write_text(decisions_md_path, self.render_decisions_md(run))
         write_json(prompt_trace_json_path, [trace.to_dict() for trace in run.prompt_traces])
+        write_json(tool_call_trace_json_path, tool_call_trace)
+        write_json(reviewer_report_json_path, reviewer_report)
+        write_text(reviewer_report_md_path, self.render_reviewer_report_md(run, reviewer_report))
         write_json(trace_summary_json_path, trace_summary)
         write_text(trace_summary_md_path, self.render_trace_summary_md(run, trace_summary))
         write_json(json_path, run.to_dict())
@@ -248,6 +272,59 @@ class AgentTraceWriter:
             "roles_count": len(roles),
             "decisions_count": len(run.decisions),
             "prompt_traces_count": len(run.prompt_traces),
+            "tool_calls_count": len(self.tool_call_trace(run)),
+        }
+
+    def tool_call_trace(self, run: AgentRunResult) -> list[dict[str, Any]]:
+        payload_trace = _payload_tool_call_trace(run.payload)
+        if payload_trace:
+            return payload_trace
+
+        calls: list[dict[str, Any]] = []
+        for index, step in enumerate(run.steps, start=1):
+            calls.append(
+                {
+                    "index": index,
+                    "role": step.role,
+                    "status": step.status,
+                    "action": _action_from_step(step),
+                    "summary": step.summary,
+                    "inputs": _step_inputs(step),
+                    "outputs": _step_outputs(step),
+                    "warnings_count": len(step.warnings),
+                    "errors_count": len(step.errors),
+                    "source": "agent_step",
+                }
+            )
+        return calls
+
+    def reviewer_report(self, run: AgentRunResult) -> dict[str, Any]:
+        payload_report = _payload_reviewer_report(run.payload)
+        if payload_report:
+            report = dict(payload_report)
+            report.setdefault("mode", run.mode)
+            report.setdefault("workspace", str(run.workspace or ""))
+            report.setdefault("source", "llm_reviewer")
+            return report
+        review_steps = [step for step in run.steps if step.role == "reviewer_agent"]
+        review_decisions = [decision for decision in run.decisions if decision.role == "reviewer_agent"]
+        status = "skip"
+        if review_steps:
+            status = "pass" if all(step.status != "fail" for step in review_steps) else "fail"
+        return {
+            "success": status != "fail",
+            "status": status,
+            "mode": run.mode,
+            "workspace": str(run.workspace or ""),
+            "steps": [step.to_dict() for step in review_steps],
+            "decisions": [decision.to_dict() for decision in review_decisions],
+            "checks": [
+                check
+                for step in review_steps
+                for check in _review_checks_from_step(step)
+            ],
+            "warnings": [warning for step in review_steps for warning in step.warnings],
+            "errors": [error for step in review_steps for error in step.errors],
         }
 
     def render_trace_summary_md(self, run: AgentRunResult, trace_summary: dict[str, Any]) -> str:
@@ -319,6 +396,45 @@ class AgentTraceWriter:
             lines.append(f"- decisions: `{run.agent_decisions_md_path}`")
         if run.agent_trace_summary_json_path:
             lines.append(f"- trace summary: `{run.agent_trace_summary_json_path}`")
+        if run.tool_call_trace_json_path:
+            lines.append(f"- tool call trace: `{run.tool_call_trace_json_path}`")
+        if run.reviewer_report_json_path:
+            lines.append(f"- reviewer report: `{run.reviewer_report_json_path}`")
+        lines.append("")
+        return "\n".join(lines)
+
+    def render_reviewer_report_md(self, run: AgentRunResult, reviewer_report: dict[str, Any]) -> str:
+        lines = [
+            "# Reviewer Report",
+            "",
+            f"Status: `{reviewer_report.get('status')}`",
+            f"Success: {str(reviewer_report.get('success')).lower()}",
+            f"Mode: `{run.mode}`",
+            f"Workspace: `{run.workspace or ''}`",
+            "",
+            "## Checks",
+            "",
+        ]
+        checks = reviewer_report.get("checks") or []
+        if checks:
+            for check in checks:
+                if isinstance(check, dict):
+                    lines.append(
+                        f"- `{check.get('name', check.get('id', 'check'))}` "
+                        f"`{check.get('status', 'recorded')}`: {check.get('summary', check.get('message', ''))}"
+                    )
+                else:
+                    lines.append(f"- {check}")
+        else:
+            lines.append("- No reviewer checks were recorded for this run.")
+        errors = reviewer_report.get("errors") or []
+        if errors:
+            lines.extend(["", "## Errors", ""])
+            lines.extend(f"- {error}" for error in errors)
+        warnings = reviewer_report.get("warnings") or []
+        if warnings:
+            lines.extend(["", "## Warnings", ""])
+            lines.extend(f"- {warning}" for warning in warnings)
         lines.append("")
         return "\n".join(lines)
 
@@ -359,6 +475,35 @@ class AgentTraceWriter:
         return "\n".join(lines)
 
 
+def _payload_tool_call_trace(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    direct_trace = payload.get("tool_call_trace") if isinstance(payload, dict) else None
+    if isinstance(direct_trace, list) and all(isinstance(item, dict) for item in direct_trace):
+        return [dict(item) for item in direct_trace]
+    repair_payload = payload.get("repair") if isinstance(payload, dict) else None
+    if isinstance(repair_payload, dict):
+        repair_trace = repair_payload.get("tool_call_trace")
+        if isinstance(repair_trace, list) and all(isinstance(item, dict) for item in repair_trace):
+            return [dict(item) for item in repair_trace]
+    return []
+
+
+def _payload_reviewer_report(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    direct = payload.get("reviewer")
+    if isinstance(direct, dict) and direct.get("source") == "llm_reviewer":
+        return dict(direct)
+    repair_payload = payload.get("repair")
+    if isinstance(repair_payload, dict):
+        reviewer = repair_payload.get("reviewer")
+        if isinstance(reviewer, dict) and reviewer.get("source") == "llm_reviewer":
+            return dict(reviewer)
+        final_reviewer = repair_payload.get("final_reviewer")
+        if isinstance(final_reviewer, dict) and final_reviewer.get("source") == "llm_reviewer":
+            return dict(final_reviewer)
+    return {}
+
+
 def _extend_trace(
     steps: list[AgentStep],
     decisions: list[AgentDecision],
@@ -382,3 +527,56 @@ def _unique_knowledge_refs(items) -> list[dict[str, Any]]:
         seen.add(identifier)
         refs.append(dict(item))
     return refs
+
+
+def _action_from_step(step: AgentStep) -> str:
+    action = step.details.get("action") if isinstance(step.details, dict) else None
+    if action:
+        return str(action)
+    return step.role.replace("_agent", "")
+
+
+def _step_inputs(step: AgentStep) -> list[str]:
+    if not isinstance(step.details, dict):
+        return []
+    inputs = step.details.get("inputs")
+    if isinstance(inputs, list):
+        return [str(item) for item in inputs]
+    if step.role == "planner_agent":
+        return ["natural_language_request"]
+    if step.role == "reviewer_agent":
+        return ["intent_contract", "modspec"]
+    if step.role == "executor_agent":
+        return ["reviewed_modspec"]
+    if step.role == "auditor_agent":
+        return ["workspace", ".agent/modspec.json", ".agent/generation-summary.json"]
+    if step.role == "repair_agent":
+        return ["build_result", "audit_result"]
+    return []
+
+
+def _step_outputs(step: AgentStep) -> list[str]:
+    if not isinstance(step.details, dict):
+        return []
+    outputs = step.details.get("outputs")
+    if isinstance(outputs, list):
+        return [str(item) for item in outputs]
+    if step.role == "planner_agent":
+        return ["intent_contract"]
+    if step.role == "reviewer_agent":
+        return ["reviewer_report"]
+    if step.role == "executor_agent":
+        workspace = step.details.get("workspace")
+        return [f"workspace={workspace}"] if workspace else ["workspace"]
+    if step.role == "auditor_agent":
+        return [".agent/audit-report.json"]
+    if step.role == "repair_agent":
+        return [".agent/agent-repair-plan.json", ".agent/repair-loop-report.json"]
+    return []
+
+
+def _review_checks_from_step(step: AgentStep) -> list[Any]:
+    if not isinstance(step.details, dict):
+        return []
+    checks = step.details.get("review_checks")
+    return list(checks) if isinstance(checks, list) else []
