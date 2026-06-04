@@ -4,7 +4,7 @@ from .agent_runtime import AgentRuntime, AgentRuntimePlugin, AgentRuntimeRequest
 from .agent_orchestrator import AgentOrchestrator, NeoForgeRuntimePlugin
 from .auditor import AuditCheck, AuditIssue, AuditResult, WorkspaceAuditor, audit_workspace
 from .balance_generator import BalancePlanGenerator
-from .benchmark_report import BenchmarkFailureType, BenchmarkModelRun, BenchmarkPageResult, BenchmarkReportRunner, BenchmarkRuntimeCase
+from .benchmark_report import AgentBenchmarkCaseResult, AgentBenchmarkCaseSpec, AgentBenchmarkResult, AgentBenchmarkRunner, BenchmarkFailureType, BenchmarkModelRun, BenchmarkPageResult, BenchmarkReportRunner, BenchmarkRuntimeCase
 from .behavior_generator import BehaviorGenerator
 from .builder import GradleBuilder
 from .capabilities import Capability, CapabilityCatalog, CapabilityMatrixResult, CapabilitySection
@@ -27,6 +27,7 @@ from .llm_engineering_report import LLMEngineeringReportResult, LLMEngineeringRe
 from .llm_provider import LLMPricing, LLMProviderMetadata, LLMProviderRegistry, LLMRequestOptions, LLMStreamEvent, LLMUsage, estimate_llm_usage, estimate_tokens
 from .llm_eval_report import LLMEvalReportResult, RealLLMEvalReportRunner
 from .llm_planner import LLMPlanningError, PlannerArtifacts, plan_with_llm, write_planner_artifacts
+from .llm_reviewer import LLMReviewResult, LLMReviewer
 from .modifier import MergeResult, ModifyResult, WorkspaceModifier, load_existing_modspec, merge_modspec, plan_modification
 from .models import (
     BlockSpec,
@@ -85,6 +86,7 @@ from .replay import AgentReplayResult, AgentRunReplayer, ReplayEvent
 from .schema import get_modspec_schema
 from .showcase import ShowcaseResult, ShowcaseRunner, ShowcaseStep
 from .tool_manifest import ToolContract, ToolManifestResult, ToolManifestRunner
+from .tool_calling_agent import StructuredPatchApplier, StructuredPatchChange, StructuredPatchResult, ToolCallingRepairAgent, ToolCallingRepairResult
 from .web_demo import WebDemoRunner, WebDemoServer, WebDemoServerResult
 from .worldgen_generator import WorldgenGenerator
 
@@ -97,6 +99,10 @@ __all__ = [
     "AgentRuntimePlugin",
     "AgentRuntimeRequest",
     "AgentRuntimeStageResult",
+    "AgentBenchmarkCaseResult",
+    "AgentBenchmarkCaseSpec",
+    "AgentBenchmarkResult",
+    "AgentBenchmarkRunner",
     "AgentReplayResult",
     "AgentRunReplayer",
     "AgentRunResult",
@@ -192,6 +198,8 @@ __all__ = [
     "LLMEngineeringReportRunner",
     "LLMCompletion",
     "LLMPlanningError",
+    "LLMReviewer",
+    "LLMReviewResult",
     "LLMPricing",
     "LLMProviderConfig",
     "LLMProviderHealth",
@@ -249,8 +257,13 @@ __all__ = [
     "SwordSpec",
     "ToolSpec",
     "ToolContract",
+    "ToolCallingRepairAgent",
+    "ToolCallingRepairResult",
     "ToolManifestResult",
     "ToolManifestRunner",
+    "StructuredPatchApplier",
+    "StructuredPatchChange",
+    "StructuredPatchResult",
     "ValidationIssue",
     "ValidationReport",
     "WebDashboardRunner",
