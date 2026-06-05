@@ -1,6 +1,8 @@
 param(
     [string]$ReleaseName = "neoforge-mod-agent-public-$(Get-Date -Format 'yyyyMMdd-HHmmss')",
     [string]$OutputRoot = "dist",
+    [string]$Rc1WorkspaceName = "rc1-release-smoke",
+    [string]$Rc1BenchmarkRunName = "rc1-release-bench",
     [switch]$NoZip,
     [switch]$Overwrite
 )
@@ -34,15 +36,13 @@ $includeDirs = @(
     "scripts",
     "src",
     "templates",
-    "tests",
-    "examplemod-template-26.1.2"
+    "tests"
 )
 
 $includeFiles = @(
     ".gitignore",
     "README.md",
-    "pyproject.toml",
-    "TASK.md"
+    "pyproject.toml"
 )
 
 function Copy-ReleasePath {
@@ -145,51 +145,56 @@ Get-ChildItem -LiteralPath $stagePath -File -Recurse -Force |
     Where-Object { $_.Name.EndsWith(".pyc") -or $_.Name.EndsWith(".pyo") } |
     Remove-Item -Force
 
+$rc1AgentDir = "workspace\$Rc1WorkspaceName\.agent"
+$rc1BenchmarkAgentDir = "workspace\benchmark-runs\$Rc1BenchmarkRunName\.agent"
+$rc1BenchmarkRunsDir = "workspace\benchmark-runs\$Rc1BenchmarkRunName\runs"
+
+$evidenceFiles = @(
+    @{ Source = "$rc1AgentDir\modspec.json"; Target = "release-artifacts\evidence\rc1-develop-repair\modspec.json"; Label = "RC1 ModSpec from agent develop" },
+    @{ Source = "$rc1AgentDir\generation-summary.json"; Target = "release-artifacts\evidence\rc1-develop-repair\generation-summary.json"; Label = "RC1 deterministic generator summary" },
+    @{ Source = "$rc1AgentDir\agent-run.json"; Target = "release-artifacts\evidence\rc1-develop-repair\agent-run.json"; Label = "RC1 agent run JSON" },
+    @{ Source = "$rc1AgentDir\agent-run.md"; Target = "release-artifacts\evidence\rc1-develop-repair\agent-run.md"; Label = "RC1 agent run Markdown" },
+    @{ Source = "$rc1AgentDir\agent-decisions.md"; Target = "release-artifacts\evidence\rc1-develop-repair\agent-decisions.md"; Label = "RC1 agent decisions" },
+    @{ Source = "$rc1AgentDir\agent-repair-plan.json"; Target = "release-artifacts\evidence\rc1-develop-repair\agent-repair-plan.json"; Label = "RC1 repair plan JSON" },
+    @{ Source = "$rc1AgentDir\agent-repair-plan.md"; Target = "release-artifacts\evidence\rc1-develop-repair\agent-repair-plan.md"; Label = "RC1 repair plan Markdown" },
+    @{ Source = "$rc1AgentDir\agent-trace-summary.json"; Target = "release-artifacts\evidence\rc1-develop-repair\agent-trace-summary.json"; Label = "RC1 trace summary JSON" },
+    @{ Source = "$rc1AgentDir\agent-trace-summary.md"; Target = "release-artifacts\evidence\rc1-develop-repair\agent-trace-summary.md"; Label = "RC1 trace summary Markdown" },
+    @{ Source = "$rc1AgentDir\tool-call-trace.json"; Target = "release-artifacts\evidence\rc1-develop-repair\tool-call-trace.json"; Label = "RC1 real tool-call trace" },
+    @{ Source = "$rc1AgentDir\prompt-trace.json"; Target = "release-artifacts\evidence\rc1-develop-repair\prompt-trace.json"; Label = "RC1 prompt trace" },
+    @{ Source = "$rc1AgentDir\rag-context.json"; Target = "release-artifacts\evidence\rc1-develop-repair\rag-context.json"; Label = "RC1 planner RAG context" },
+    @{ Source = "$rc1AgentDir\rag-context.md"; Target = "release-artifacts\evidence\rc1-develop-repair\rag-context.md"; Label = "RC1 planner RAG context Markdown" },
+    @{ Source = "$rc1AgentDir\repair-rag-context.json"; Target = "release-artifacts\evidence\rc1-develop-repair\repair-rag-context.json"; Label = "RC1 repair RAG context" },
+    @{ Source = "$rc1AgentDir\repair-rag-context.md"; Target = "release-artifacts\evidence\rc1-develop-repair\repair-rag-context.md"; Label = "RC1 repair RAG context Markdown" },
+    @{ Source = "$rc1AgentDir\reviewer-report.json"; Target = "release-artifacts\evidence\rc1-develop-repair\reviewer-report.json"; Label = "RC1 LLM reviewer report JSON" },
+    @{ Source = "$rc1AgentDir\reviewer-report.md"; Target = "release-artifacts\evidence\rc1-develop-repair\reviewer-report.md"; Label = "RC1 LLM reviewer report Markdown" },
+    @{ Source = "$rc1AgentDir\audit-report.json"; Target = "release-artifacts\evidence\rc1-develop-repair\audit-report.json"; Label = "RC1 audit report JSON" },
+    @{ Source = "$rc1AgentDir\audit-report.md"; Target = "release-artifacts\evidence\rc1-develop-repair\audit-report.md"; Label = "RC1 audit report Markdown" },
+    @{ Source = "$rc1AgentDir\structured-patch-plan.json"; Target = "release-artifacts\evidence\rc1-develop-repair\structured-patch-plan.json"; Label = "RC1 structured patch plan" },
+    @{ Source = "$rc1AgentDir\structured-patch-diff.md"; Target = "release-artifacts\evidence\rc1-develop-repair\structured-patch-diff.md"; Label = "RC1 structured patch diff" },
+    @{ Source = "$rc1AgentDir\structured-patch-report.json"; Target = "release-artifacts\evidence\rc1-develop-repair\structured-patch-report.json"; Label = "RC1 structured patch report" },
+    @{ Source = "$rc1AgentDir\structured-patch-rollback-report.json"; Target = "release-artifacts\evidence\rc1-develop-repair\structured-patch-rollback-report.json"; Label = "RC1 rollback evidence" },
+    @{ Source = "$rc1AgentDir\resource-quality-report.json"; Target = "release-artifacts\evidence\rc1-develop-repair\resource-quality-report.json"; Label = "RC1 resource quality report JSON" },
+    @{ Source = "$rc1AgentDir\resource-quality-report.md"; Target = "release-artifacts\evidence\rc1-develop-repair\resource-quality-report.md"; Label = "RC1 resource quality report Markdown" },
+    @{ Source = "$rc1AgentDir\texture-atlas.png"; Target = "release-artifacts\evidence\rc1-develop-repair\texture-atlas.png"; Label = "RC1 generated texture atlas" },
+    @{ Source = "$rc1BenchmarkAgentDir\agent-benchmark-report.html"; Target = "release-artifacts\evidence\rc1-benchmark\agent-benchmark-report.html"; Label = "RC1 agent bench report HTML" },
+    @{ Source = "$rc1BenchmarkAgentDir\agent-benchmark-report.json"; Target = "release-artifacts\evidence\rc1-benchmark\agent-benchmark-report.json"; Label = "RC1 agent bench report JSON" },
+    @{ Source = "$rc1BenchmarkAgentDir\agent-benchmark-report.md"; Target = "release-artifacts\evidence\rc1-benchmark\agent-benchmark-report.md"; Label = "RC1 agent bench report Markdown" },
+    @{ Source = "$rc1BenchmarkRunsDir\01-develop_ruby_tech_refine\.agent\agent-run.json"; Target = "release-artifacts\evidence\rc1-benchmark\cases\01-develop\agent-run.json"; Label = "RC1 bench develop case agent run" },
+    @{ Source = "$rc1BenchmarkRunsDir\01-develop_ruby_tech_refine\.agent\tool-call-trace.json"; Target = "release-artifacts\evidence\rc1-benchmark\cases\01-develop\tool-call-trace.json"; Label = "RC1 bench develop case tool trace" },
+    @{ Source = "$rc1BenchmarkRunsDir\01-develop_ruby_tech_refine\.agent\reviewer-report.json"; Target = "release-artifacts\evidence\rc1-benchmark\cases\01-develop\reviewer-report.json"; Label = "RC1 bench develop case reviewer report" },
+    @{ Source = "$rc1BenchmarkRunsDir\02-repair_mods_toml_structured_patch-setup\.agent\agent-run.json"; Target = "release-artifacts\evidence\rc1-benchmark\cases\02-repair\agent-run.json"; Label = "RC1 bench repair case agent run" },
+    @{ Source = "$rc1BenchmarkRunsDir\02-repair_mods_toml_structured_patch-setup\.agent\tool-call-trace.json"; Target = "release-artifacts\evidence\rc1-benchmark\cases\02-repair\tool-call-trace.json"; Label = "RC1 bench repair case tool trace" },
+    @{ Source = "$rc1BenchmarkRunsDir\02-repair_mods_toml_structured_patch-setup\.agent\reviewer-report.json"; Target = "release-artifacts\evidence\rc1-benchmark\cases\02-repair\reviewer-report.json"; Label = "RC1 bench repair case reviewer report" },
+    @{ Source = "$rc1BenchmarkRunsDir\02-repair_mods_toml_structured_patch-setup\.agent\structured-patch-rollback-report.json"; Target = "release-artifacts\evidence\rc1-benchmark\cases\02-repair\structured-patch-rollback-report.json"; Label = "RC1 bench repair case rollback evidence" }
+)
+
 $evidence = @()
-$evidence += Copy-EvidenceFile `
-    -SourceRelativePath "workspace\v81-provider-layer-smoke-20260514\.agent\agent-run-replay.html" `
-    -TargetRelativePath "release-artifacts\evidence\session-replay\agent-run-replay.html" `
-    -Label "Session replay trace viewer"
-$evidence += Copy-EvidenceFile `
-    -SourceRelativePath "workspace\benchmark-runs\v82-benchmark-page-offline-20260514\.agent\benchmark-report.html" `
-    -TargetRelativePath "release-artifacts\evidence\benchmark-report\benchmark-report.html" `
-    -Label "Benchmark report HTML"
-$evidence += Copy-EvidenceFile `
-    -SourceRelativePath "workspace\benchmark-runs\v82-benchmark-page-offline-20260514\.agent\benchmark-report.json" `
-    -TargetRelativePath "release-artifacts\evidence\benchmark-report\benchmark-report.json" `
-    -Label "Benchmark report JSON"
-$evidence += Copy-EvidenceFile `
-    -SourceRelativePath "workspace\benchmark-runs\v82-benchmark-page-offline-20260514\.agent\benchmark-report.md" `
-    -TargetRelativePath "release-artifacts\evidence\benchmark-report\benchmark-report.md" `
-    -Label "Benchmark report Markdown"
-$evidence += Copy-EvidenceFile `
-    -SourceRelativePath "workspace\evidence-chain-runs\local-evidence-chain\.agent\evidence-chain-report.json" `
-    -TargetRelativePath "release-artifacts\evidence\evidence-chain\evidence-chain-report.json" `
-    -Label "Layered evidence chain JSON"
-$evidence += Copy-EvidenceFile `
-    -SourceRelativePath "workspace\evidence-chain-runs\local-evidence-chain\.agent\evidence-chain-report.md" `
-    -TargetRelativePath "release-artifacts\evidence\evidence-chain\evidence-chain-report.md" `
-    -Label "Layered evidence chain Markdown"
-$evidence += Copy-EvidenceFile `
-    -SourceRelativePath "workspace\v80-resource-smoke\.agent\resource-quality-report.md" `
-    -TargetRelativePath "release-artifacts\evidence\resource-quality\resource-quality-report.md" `
-    -Label "Resource quality report"
-$evidence += Copy-EvidenceFile `
-    -SourceRelativePath "workspace\v80-resource-smoke\.agent\texture-atlas.png" `
-    -TargetRelativePath "release-artifacts\evidence\resource-quality\texture-atlas.png" `
-    -Label "Texture atlas preview"
-$evidence += Copy-EvidenceFile `
-    -SourceRelativePath "workspace\v80-resource-smoke\.agent\previews\ruby_gallery.png" `
-    -TargetRelativePath "release-artifacts\evidence\resource-quality\previews\ruby_gallery.png" `
-    -Label "Structure preview PNG"
-$evidence += Copy-EvidenceFile `
-    -SourceRelativePath "workspace\failure-lab-runs\v80-portfolio-showcase-failure-lab\.agent\failure-lab-report.md" `
-    -TargetRelativePath "release-artifacts\evidence\failure-repair\failure-lab-report.md" `
-    -Label "Failure injection report"
-$evidence += Copy-EvidenceFile `
-    -SourceRelativePath "workspace\repair-eval-runs\v80-portfolio-showcase-repair-eval\.agent\repair-eval-report.md" `
-    -TargetRelativePath "release-artifacts\evidence\failure-repair\repair-eval-report.md" `
-    -Label "Repair eval report"
+foreach ($item in $evidenceFiles) {
+    $evidence += Copy-EvidenceFile `
+        -SourceRelativePath $item.Source `
+        -TargetRelativePath $item.Target `
+        -Label $item.Label
+}
 
 $forbiddenRoots = @("workspace", ".tmp", "dist", ".gradle-user-home", ".gradle-default-user-home", ".playwright-mcp", ".codex")
 $violations = @()
@@ -214,6 +219,8 @@ $manifest = [ordered]@{
     included_dirs = $copiedDirs
     included_files = $copiedFiles
     excluded_paths = $excludedPaths
+    rc1_workspace_name = $Rc1WorkspaceName
+    rc1_benchmark_run_name = $Rc1BenchmarkRunName
     curated_evidence = $evidence
     file_count = $fileStats.Count
     size_bytes = [int64]($fileStats.Sum)

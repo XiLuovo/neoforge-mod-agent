@@ -31,6 +31,7 @@ from .planner import ModProjectPlanner
 from .portfolio_demo import PortfolioDemoRunner
 from .quality_gate import QualityGateRunner
 from .rag_eval import RAGEvalRunner
+from .real_llm_stability import RealLLMStabilityRunner
 from .repair import RepairArtifactGenerator
 from .repair_eval import RepairEvalRunner
 from .repair_loop import AutoRepairRunner
@@ -184,6 +185,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     llm_engineering_report_parser.add_argument("--run-name", help="Optional stable run folder name under workspace/llm-engineering-runs/.")
     llm_engineering_report_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output.")
+
+    real_llm_stability_parser = subparsers.add_parser(
+        "real-llm-stability",
+        help="Run strict real-provider cases and classify provider/schema/audit/build/fallback outcomes.",
+    )
+    real_llm_stability_parser.add_argument("--cases", help="Optional JSON file containing eval cases; only generate cases are used.")
+    real_llm_stability_parser.add_argument("--run-name", help="Optional stable run folder name under workspace/real-llm-stability-runs/.")
+    real_llm_stability_parser.add_argument("--limit", type=int, default=10, help="Only run the first N generate cases.")
+    real_llm_stability_parser.add_argument("--llm-provider", choices=["mock", "openai-compatible"], default="openai-compatible", help="Provider to test in strict mode.")
+    real_llm_stability_parser.add_argument("--require-real", action="store_true", help="Fail the report unless every case succeeds through the real provider without fallback.")
+    real_llm_stability_parser.add_argument("--fallback-probe", dest="fallback_probe", action="store_true", help="After strict real-provider failure, run a non-strict fallback probe and count it separately.")
+    real_llm_stability_parser.add_argument("--no-fallback-probe", dest="fallback_probe", action="store_false", help="Do not run fallback probes after strict real-provider failures.")
+    real_llm_stability_parser.set_defaults(fallback_probe=True)
+    real_llm_stability_build_group = real_llm_stability_parser.add_mutually_exclusive_group()
+    real_llm_stability_build_group.add_argument("--build", dest="build", action="store_true", help="Run Gradle build for each strict/fallback case.")
+    real_llm_stability_build_group.add_argument("--no-build", dest="build", action="store_false", help="Skip Gradle build for faster stability sampling.")
+    real_llm_stability_parser.set_defaults(build=False)
+    real_llm_stability_audit_group = real_llm_stability_parser.add_mutually_exclusive_group()
+    real_llm_stability_audit_group.add_argument("--audit", dest="audit", action="store_true", help="Run workspace audit for each strict/fallback case.")
+    real_llm_stability_audit_group.add_argument("--no-audit", dest="audit", action="store_false", help="Skip workspace audit for stability sampling.")
+    real_llm_stability_parser.set_defaults(audit=True)
+    real_llm_stability_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output.")
 
     benchmark_report_parser = subparsers.add_parser(
         "benchmark-report",
@@ -594,6 +617,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_llm_eval_report_command(args, config)
     if args.command == "llm-engineering-report":
         return _run_llm_engineering_report_command(args, config)
+    if args.command == "real-llm-stability":
+        return _run_real_llm_stability_command(args, config)
     if args.command == "benchmark-report":
         return _run_benchmark_report_command(args, config)
     if args.command == "evidence-chain-report":
@@ -900,6 +925,22 @@ def _run_llm_engineering_report_command(args: argparse.Namespace, config: AppCon
     result = LLMEngineeringReportRunner(config).run(
         args.target,
         run_name=args.run_name,
+    )
+    payload = result.to_dict()
+    _print_payload(payload, as_json=args.json)
+    return 0 if result.success else 1
+
+
+def _run_real_llm_stability_command(args: argparse.Namespace, config: AppConfig) -> int:
+    result = RealLLMStabilityRunner(config).run(
+        cases_path=Path(args.cases) if args.cases else None,
+        run_name=args.run_name,
+        limit=args.limit,
+        llm_provider=args.llm_provider,
+        run_build=args.build,
+        run_audit=args.audit,
+        fallback_probe=args.fallback_probe,
+        require_real=args.require_real,
     )
     payload = result.to_dict()
     _print_payload(payload, as_json=args.json)
@@ -1538,6 +1579,29 @@ def _print_payload(payload: dict, *, as_json: bool) -> None:
             print("regressions:")
             for item in payload["regressions"]:
                 print(f"- {item}")
+        return
+
+    if "real_llm_stability_json_path" in payload:
+        metrics = payload.get("metrics", {})
+        print(f"real LLM stability: {'success' if payload.get('success') else 'failed'}")
+        print(f"run id: {payload.get('run_id')}")
+        print(f"provider: {payload.get('llm_provider')}")
+        print(f"real LLM success: {metrics.get('real_llm_success_count', 0)}/{metrics.get('total_cases', 0)}")
+        print(f"provider failures: {metrics.get('provider_failure_count', 0)}")
+        print(f"schema failures: {metrics.get('schema_failure_count', 0)}")
+        print(f"audit failures: {metrics.get('audit_failure_count', 0)}")
+        print(f"build failures: {metrics.get('build_failure_count', 0)}")
+        print(f"fallback success: {metrics.get('fallback_success_count', 0)}")
+        print(f"tokens: {metrics.get('total_tokens', 0)}")
+        print(f"estimated cost USD: {metrics.get('estimated_cost_usd')}")
+        print(f"stability json: {payload.get('real_llm_stability_json_path')}")
+        print(f"stability report: {payload.get('real_llm_stability_md_path')}")
+        failed = [case for case in payload.get("cases", []) if not case.get("real_llm_success")]
+        if failed:
+            print("")
+            print("non-real-success cases:")
+            for case in failed:
+                print(f"- {case.get('id')}: {case.get('outcome')} ({case.get('failure_type') or 'no failure type'})")
         return
 
     if "benchmark_report_json_path" in payload:

@@ -731,6 +731,34 @@ class CliParserTests(unittest.TestCase):
         self.assertTrue(args.audit)
         self.assertTrue(args.json)
 
+    def test_real_llm_stability_arguments_parse(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "real-llm-stability",
+                "--run-name",
+                "unit-real-llm-stability",
+                "--llm-provider",
+                "openai-compatible",
+                "--limit",
+                "10",
+                "--require-real",
+                "--no-fallback-probe",
+                "--no-build",
+                "--audit",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.command, "real-llm-stability")
+        self.assertEqual(args.run_name, "unit-real-llm-stability")
+        self.assertEqual(args.llm_provider, "openai-compatible")
+        self.assertEqual(args.limit, 10)
+        self.assertTrue(args.require_real)
+        self.assertFalse(args.fallback_probe)
+        self.assertFalse(args.build)
+        self.assertTrue(args.audit)
+        self.assertTrue(args.json)
+
     def test_repair_loop_arguments_parse(self) -> None:
         args = build_parser().parse_args(
             [

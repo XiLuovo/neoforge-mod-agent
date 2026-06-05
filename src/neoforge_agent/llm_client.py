@@ -27,6 +27,7 @@ DEFAULT_OPENAI_COMPATIBLE_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_LLM_TIMEOUT_SECONDS = 60
 DEFAULT_LLM_MAX_RETRIES = 2
 DEFAULT_LLM_SCHEMA_RETRIES = 1
+DEFAULT_LLM_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36"
 DOTENV_FILENAMES = (".env.local", ".env")
 
 
@@ -1593,6 +1594,8 @@ class OpenAICompatibleClient:
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": _llm_user_agent(),
             },
             method="POST",
         )
@@ -1720,6 +1723,11 @@ def _env_first(names: list[str], *, default: str | None = None) -> tuple[str | N
             value, source = entry
             return value, f"{source}:{name}"
     return default, None
+
+
+def _llm_user_agent() -> str:
+    value, _ = _env_first(["NEOFORGE_AGENT_LLM_USER_AGENT", "OPENAI_USER_AGENT"])
+    return value or DEFAULT_LLM_USER_AGENT
 
 
 def _project_dotenv_values() -> dict[str, tuple[str, str]]:

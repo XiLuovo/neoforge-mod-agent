@@ -1,12 +1,12 @@
 param(
-    [string]$RunName = "v80-portfolio-showcase",
+    [string]$RunName = "",
     [ValidateSet("rules", "llm", "auto")]
     [string]$Planner = "llm",
     [switch]$UseRealLlm,
-    [switch]$RunQualityGate,
     [switch]$Build,
-    [switch]$SkipGoldenCases,
-    [switch]$SkipFailureSample
+    [int]$MaxIterations = 5,
+    [int]$BenchEvalLimit = 1,
+    [int]$BenchRepairLimit = 1
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +14,10 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $ProjectRoot
 $env:PYTHONPATH = (Resolve-Path ".\src")
+
+if ([string]::IsNullOrWhiteSpace($RunName)) {
+    $RunName = "rc1-showcase-$((Get-Date).ToString('yyyyMMdd-HHmmss'))"
+}
 
 $Provider = "mock"
 if ($UseRealLlm) {
@@ -24,6 +28,10 @@ $BuildFlag = "--no-build"
 if ($Build) {
     $BuildFlag = "--build"
 }
+
+$DevelopWorkspace = "$RunName-develop"
+$BenchRunName = "$RunName-bench"
+$RepairGoal = "Fix audit failures using safe structured patches."
 
 function Invoke-AgentCli {
     param(
@@ -39,118 +47,60 @@ function Invoke-AgentCli {
     }
 }
 
-Write-Host "== NeoForge Mod Agent Portfolio Showcase =="
+Write-Host "== NeoForge Mod Agent RC1 Showcase =="
 Write-Host "Project root: $ProjectRoot"
 Write-Host "Run name: $RunName"
+Write-Host "Develop workspace: $DevelopWorkspace"
 Write-Host "Planner: $Planner"
 Write-Host "Provider: $Provider"
 Write-Host "Build: $($Build.IsPresent)"
 Write-Host ""
 
-$PortfolioArgs = @(
-    "portfolio-demo",
-    "--run-name", $RunName,
+Invoke-AgentCli -Arguments @(
+    "agent", "develop",
+    "Create a ruby mod with a ruby item, ruby block, ruby ore, ruby sword, ruby tool set, and ruby armor set.",
     "--planner", $Planner,
     "--llm-provider", $Provider,
-    "--candidate-provider", $Provider,
-    "--eval-limit", "2",
+    "--workspace-name", $DevelopWorkspace,
     $BuildFlag,
+    "--max-iterations", "$MaxIterations",
     "--json"
 )
 
-if ($RunQualityGate) {
-    $PortfolioArgs += "--quality-gate"
-}
+Invoke-AgentCli -Arguments @(
+    "agent", "repair", $DevelopWorkspace,
+    "--goal", $RepairGoal,
+    "--planner", $Planner,
+    "--llm-provider", $Provider,
+    "--max-iterations", "$MaxIterations",
+    $BuildFlag,
+    "--audit",
+    "--json"
+)
 
-Invoke-AgentCli -Arguments $PortfolioArgs
+Invoke-AgentCli -Arguments @(
+    "agent", "bench",
+    "--run-name", $BenchRunName,
+    "--llm-provider", $Provider,
+    "--eval-limit", "$BenchEvalLimit",
+    "--repair-limit", "$BenchRepairLimit",
+    $BuildFlag,
+    "--audit",
+    "--json"
+)
 
-if (-not $SkipGoldenCases) {
-    Invoke-AgentCli -Arguments @(
-        "agent", "generate",
-        "Create a ruby mod with ruby item, ruby block, ruby ore, ruby sword, ruby tool set, and ruby armor set.",
-        "--planner", $Planner,
-        "--llm-provider", $Provider,
-        "--workspace-name", "$RunName-ruby-basic",
-        "--overwrite",
-        $BuildFlag,
-        "--json"
-    )
-
-    Invoke-AgentCli -Arguments @(
-        "generate-from-spec", ".\examples\machine_ruby_compressor.json",
-        "--workspace-name", "$RunName-machine",
-        "--overwrite",
-        "--audit",
-        $BuildFlag,
-        "--json"
-    )
-
-    Invoke-AgentCli -Arguments @(
-        "generate-from-spec", ".\examples\progression_gameplay_loop.json",
-        "--workspace-name", "$RunName-gameplay-loop",
-        "--overwrite",
-        "--audit",
-        $BuildFlag,
-        "--json"
-    )
-
-    Invoke-AgentCli -Arguments @(
-        "generate-from-spec", ".\examples\quest_guide_gameplay_loop.json",
-        "--workspace-name", "$RunName-quest-guide",
-        "--overwrite",
-        "--audit",
-        $BuildFlag,
-        "--json"
-    )
-
-    Invoke-AgentCli -Arguments @(
-        "generate-from-spec", ".\examples\resource_quality_showcase.json",
-        "--workspace-name", "$RunName-resource-quality",
-        "--overwrite",
-        "--audit",
-        $BuildFlag,
-        "--json"
-    )
-}
-
-if (-not $SkipFailureSample) {
-    $FailureArgs = @(
-        "failure-lab",
-        "--run-name", "$RunName-failure-lab",
-        "--case", "delete_model",
-        "--json"
-    )
-
-    $RepairEvalArgs = @(
-        "repair-eval",
-        "--run-name", "$RunName-repair-eval",
-        "--case", "delete_model",
-        "--json"
-    )
-
-    if ($Build) {
-        $FailureArgs += "--build"
-        $RepairEvalArgs += "--build"
-    }
-
-    Invoke-AgentCli -Arguments $FailureArgs
-    Invoke-AgentCli -Arguments $RepairEvalArgs
-}
-
-$PortfolioDir = Join-Path $ProjectRoot "workspace\portfolio-runs\$RunName"
-$Report = Join-Path $PortfolioDir ".agent\portfolio-demo-report.md"
-$Dashboard = Join-Path $PortfolioDir "runs\dashboard-runs\$RunName-dashboard\index.html"
+$DevelopAgentDir = Join-Path $ProjectRoot "workspace\$DevelopWorkspace\.agent"
+$BenchAgentDir = Join-Path $ProjectRoot "workspace\benchmark-runs\$BenchRunName\.agent"
 
 Write-Host ""
-Write-Host "== Showcase artifacts =="
-Write-Host "Portfolio report: $Report"
-Write-Host "Dashboard HTML:    $Dashboard"
-Write-Host "Ruby basic:        $(Join-Path $ProjectRoot "workspace\$RunName-ruby-basic\.agent\audit-report.json")"
-Write-Host "Machine demo:      $(Join-Path $ProjectRoot "workspace\$RunName-machine\.agent\audit-report.json")"
-Write-Host "Gameplay loop:     $(Join-Path $ProjectRoot "workspace\$RunName-gameplay-loop\.agent\progression-report.md")"
-Write-Host "Quest guide:       $(Join-Path $ProjectRoot "workspace\$RunName-quest-guide\.agent\quest-report.md")"
-Write-Host "Resource preview:  $(Join-Path $ProjectRoot "workspace\$RunName-resource-quality\.agent\resource-quality-report.md")"
-Write-Host "Failure lab:       $(Join-Path $ProjectRoot "workspace\failure-lab-runs\$RunName-failure-lab\.agent\failure-lab-report.md")"
-Write-Host "Repair eval:       $(Join-Path $ProjectRoot "workspace\repair-eval-runs\$RunName-repair-eval\.agent\repair-eval-report.md")"
+Write-Host "== RC1 showcase artifacts =="
+Write-Host "Develop run:       $(Join-Path $DevelopAgentDir "agent-run.md")"
+Write-Host "Tool trace:        $(Join-Path $DevelopAgentDir "tool-call-trace.json")"
+Write-Host "Reviewer report:   $(Join-Path $DevelopAgentDir "reviewer-report.json")"
+Write-Host "Audit report:      $(Join-Path $DevelopAgentDir "audit-report.json")"
+Write-Host "Structured patch:  $(Join-Path $DevelopAgentDir "structured-patch-report.json")"
+Write-Host "Rollback evidence: $(Join-Path $DevelopAgentDir "structured-patch-rollback-report.json")"
+Write-Host "Benchmark report:  $(Join-Path $BenchAgentDir "agent-benchmark-report.md")"
+Write-Host "Benchmark HTML:    $(Join-Path $BenchAgentDir "agent-benchmark-report.html")"
 Write-Host ""
-Write-Host "Suggested walkthrough: report -> dashboard -> ModSpec -> audit -> failure/repair reports."
+Write-Host "Suggested walkthrough: agent-run -> tool trace -> reviewer -> repair evidence -> agent bench metrics."
