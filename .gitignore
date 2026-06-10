@@ -14,3 +14,6 @@ dist/
 
 workspace/*
 !workspace/.gitkeep
+
+# Personal learning notes and interview drafts.
+docs/学习笔记/
