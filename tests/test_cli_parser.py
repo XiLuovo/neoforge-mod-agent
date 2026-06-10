@@ -745,6 +745,9 @@ class CliParserTests(unittest.TestCase):
                 "--no-fallback-probe",
                 "--no-build",
                 "--audit",
+                "--runtime-evidence",
+                "docs/runtime.md",
+                "--require-runtime",
                 "--json",
             ]
         )
@@ -757,6 +760,8 @@ class CliParserTests(unittest.TestCase):
         self.assertFalse(args.fallback_probe)
         self.assertFalse(args.build)
         self.assertTrue(args.audit)
+        self.assertEqual(args.runtime_evidence, "docs/runtime.md")
+        self.assertTrue(args.require_runtime)
         self.assertTrue(args.json)
 
     def test_repair_loop_arguments_parse(self) -> None:

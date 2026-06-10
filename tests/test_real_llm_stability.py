@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -42,9 +43,70 @@ class RealLLMStabilityTests(unittest.TestCase):
             self.assertEqual(result.metrics["total_cases"], 1)
             self.assertEqual(result.metrics["strict_success_count"], 1)
             self.assertEqual(result.metrics["real_llm_success_count"], 0)
+            self.assertEqual(result.metrics["runtime_unverified_count"], 1)
             self.assertEqual(result.cases[0].outcome, "mock_success")
+            self.assertEqual(result.cases[0].runtime_status, "not_checked")
             self.assertTrue(result.real_llm_stability_json_path.exists())
             self.assertTrue(result.real_llm_stability_md_path.exists())
+
+    def test_real_llm_stability_attaches_runtime_evidence(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+            runtime_evidence = Path(tmp) / "runtime-evidence.json"
+            runtime_evidence.write_text(
+                json.dumps(
+                    {
+                        "runtime_evidence_cases": [
+                            {
+                                "id": "basic_ruby",
+                                "workspace": "workspace/manual-basic-ruby",
+                                "status": "passed",
+                                "passed": True,
+                                "notes": "Manual Minecraft smoke passed.",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = RealLLMStabilityRunner(config).run(
+                run_name="unit-real-llm-stability-runtime",
+                llm_provider="mock",
+                limit=1,
+                run_build=False,
+                run_audit=True,
+                fallback_probe=False,
+                runtime_evidence_path=runtime_evidence,
+                require_runtime=True,
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.metrics["runtime_checked_count"], 1)
+            self.assertEqual(result.metrics["runtime_success_count"], 1)
+            self.assertEqual(result.metrics["runtime_unverified_count"], 0)
+            self.assertEqual(result.metrics["runtime_failure_count"], 0)
+            self.assertEqual(result.cases[0].runtime_status, "runtime_passed")
+            self.assertTrue(result.cases[0].runtime_checked)
+            self.assertEqual(len(result.runtime_evidence_cases), 1)
+
+    def test_real_llm_stability_require_runtime_fails_without_evidence(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+
+            result = RealLLMStabilityRunner(config).run(
+                run_name="unit-real-llm-stability-runtime-missing",
+                llm_provider="mock",
+                limit=1,
+                run_build=False,
+                run_audit=True,
+                fallback_probe=False,
+                require_runtime=True,
+            )
+
+            self.assertFalse(result.success)
+            self.assertTrue(any("Runtime evidence was required" in error for error in result.errors))
+            self.assertEqual(result.metrics["runtime_unverified_count"], 1)
 
     def test_real_llm_stability_classifies_missing_provider_and_fallback(self) -> None:
         with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:

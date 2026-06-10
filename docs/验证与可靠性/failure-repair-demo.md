@@ -2,7 +2,9 @@
 
 > 文档定位：这是失败修复演示专项材料，不是主学习入口。需要准备 failure -> audit -> repair -> pass 的演示时再读。
 
-这是一条专门给面试展示用的自修复 demo case。它不是普通 happy path，而是主动破坏生成产物，再证明系统能发现、解释、修复并重新通过。
+这是专门给面试展示用的自修复 demo 材料。它不是普通 happy path，而是主动破坏生成产物，再证明系统能发现、解释、修复并重新通过。
+
+已经跑好的本地证据见 [failure-repair-evidence-summary.md](failure-repair-evidence-summary.md)。那里整理了 `break_recipe_reference` 和 `pack.mcmeta structured patch` 两条面试展示 case。
 
 ## 一键运行
 
@@ -39,31 +41,49 @@
 ## 当前推荐展示 case
 
 ```powershell
-.\scripts\failure_repair_demo.ps1 -RunName v80-failure-repair-demo -Case delete_model
+.\scripts\failure_repair_demo.ps1 -RunName interview-recipe-failure-demo -Case break_recipe_reference
 ```
 
-关键产物：
+这条 case 展示 recipe 引用错误如何被 audit 检出，并通过 RAG + managed-file regeneration 修复。关键产物：
 
 ```text
-workspace/failure-repair-demos/v80-failure-repair-demo/.agent/failure-repair-demo-report.md
-workspace/failure-repair-demos/v80-failure-repair-demo/.agent/failure-repair-demo-report.json
-workspace/failure-lab-runs/v80-failure-repair-demo/.agent/failure-lab-report.md
-workspace/failure-lab-runs/v80-failure-repair-demo/workspaces/delete_model/.agent/audit-report.json
-workspace/failure-lab-runs/v80-failure-repair-demo/workspaces/delete_model/.agent/repair-rag-context.md
-workspace/failure-lab-runs/v80-failure-repair-demo/workspaces/delete_model/.agent/repair-loop-report.md
+workspace/failure-repair-demos/interview-recipe-failure-demo/.agent/failure-repair-demo-report.md
+workspace/failure-repair-demos/interview-recipe-failure-demo/.agent/failure-repair-demo-report.json
+workspace/failure-lab-runs/interview-recipe-failure-demo/.agent/failure-lab-report.md
+workspace/failure-lab-runs/interview-recipe-failure-demo/workspaces/break_recipe_reference/.agent/audit-report.json
+workspace/failure-lab-runs/interview-recipe-failure-demo/workspaces/break_recipe_reference/.agent/repair-rag-context.md
+workspace/failure-lab-runs/interview-recipe-failure-demo/workspaces/break_recipe_reference/.agent/repair-loop-report.md
+```
+
+第二条推荐展示已经跑好的 tool-calling structured patch case：
+
+```powershell
+py -3.11 -m agent.cli agent repair workspace\interview-packformat-tool-demo --goal "Fix pack.mcmeta audit failure using safe structured patches, then rerun audit." --planner llm --llm-provider mock --max-iterations 5 --no-build --audit --json
+```
+
+这条 case 展示 `pack.mcmeta` 类型错误如何通过 `retrieve_rag -> read_file -> apply_structured_patch -> run_audit -> finish` 修复，并留下 snapshot / rollback evidence。关键产物：
+
+```text
+workspace/interview-packformat-tool-demo/.agent/agent-run.md
+workspace/interview-packformat-tool-demo/.agent/tool-call-trace.json
+workspace/interview-packformat-tool-demo/.agent/structured-patch-diff.md
+workspace/interview-packformat-tool-demo/.agent/structured-patch-report.json
+workspace/interview-packformat-tool-demo/.agent/structured-patch-rollback-report.json
+workspace/interview-packformat-tool-demo/.agent/audit-report.json
 ```
 
 ## 面试讲解顺序
 
-1. 打开 compact report，先看六个阶段是否都通过。
-2. 打开 initial audit report，说明系统不是靠人工肉眼发现问题，而是结构化检测到缺失的 model 引用。
-3. 打开 repair RAG report，说明系统能把错误映射到相关知识，不只是盲目重跑。
-4. 打开 repair-loop report，说明修复动作是保守的：从 `.agent/modspec.json` 重生成 managed files。
-5. 回到 compact report，看 `final_audit_success = true`，完成闭环。
+1. 先打开 [failure-repair-evidence-summary.md](failure-repair-evidence-summary.md)，说明两个 case 的差异：一个是 managed-file regeneration，一个是 structured patch。
+2. 展示 recipe case：`initial_audit_success = false`、detected issue 为 `recipe:ruby_axe:json_key:R`、repair RAG 命中 5 条上下文、`final_audit_success = true`。
+3. 展示 pack metadata case：tool trace 包含 `retrieve_rag`、`read_file`、`apply_structured_patch`、`run_audit`、`finish`。
+4. 打开 `structured-patch-diff.md`，说明 patch 只把 `"pack_format": "BROKEN"` 改回 `"pack_format": 61`。
+5. 打开 rollback report，说明修复不是不可追踪的直接覆盖。
+6. 收束到边界：默认不跑 Gradle build，也不等价于 Minecraft 客户端内 runtime 自动化测试。
 
 ## 面试可用说法
 
-> 我准备了一个失败注入 demo：系统先生成干净项目，然后故意删除一个 item model。audit 会检测到模型资源缺失，repair RAG 会检索相关资源生成知识，repair-loop 再根据 `ModSpec` 重新生成受控文件，最后 audit 重新通过。这个 case 用来证明项目不是只能跑成功样例，而是有故障诊断和自修复闭环。
+> 我准备了两个失败注入 demo，而不是只展示成功样例。第一个把 recipe JSON 的材料引用改坏，audit 能定位到 `recipe:ruby_axe:json_key:R`，repair RAG 给出相关知识，repair-loop 再根据 `.agent/modspec.json` 重生成 managed files，最后 audit 通过。第二个把 `pack.mcmeta` 的 `pack_format` 改成字符串，tool-calling repair loop 依次检索 RAG、读文件、应用 structured patch、复跑 audit，并留下 snapshot 和 rollback evidence。这能证明系统有观察、诊断、受控修复和可追溯验收闭环。
 
 ## 边界
 

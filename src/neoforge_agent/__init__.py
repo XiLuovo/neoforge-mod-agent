@@ -79,7 +79,7 @@ from .project_generator import ProjectGenerator, ProjectLayout
 from .quality_gate import QualityGateCheck, QualityGateResult, QualityGateRunner
 from .quest_generator import QuestGuideGenerator
 from .rag_eval import RAGEvalCase, RAGEvalCaseResult, RAGEvalResult, RAGEvalRunner, default_rag_eval_cases
-from .real_llm_stability import RealLLMStabilityCaseResult, RealLLMStabilityResult, RealLLMStabilityRunner
+from .real_llm_stability import RealLLMRuntimeEvidenceCase, RealLLMStabilityCaseResult, RealLLMStabilityResult, RealLLMStabilityRunner
 from .repair_loop import AutoRepairRunner, RepairLoopAttempt, RepairLoopResult
 from .repair_rag import RepairRAGAdvisor, RepairRAGResult
 from .repair_eval import RepairEvalCaseResult, RepairEvalResult, RepairEvalRunner
@@ -241,6 +241,7 @@ __all__ = [
     "RAGEvalCaseResult",
     "RAGEvalResult",
     "RAGEvalRunner",
+    "RealLLMRuntimeEvidenceCase",
     "RealLLMStabilityCaseResult",
     "RealLLMStabilityResult",
     "RealLLMStabilityRunner",

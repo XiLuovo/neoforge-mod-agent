@@ -1,115 +1,36 @@
-﻿# Direct Code Lane
+# Direct Code Lane
 
-> 文档定位：这是 Direct Code Lane 机制真相源。结构化补丁接口、路径边界、artifact、audit/build gate 和 rollback 以本文为准。
+> RC1 定位：Direct Code Lane 是辅助/兼容能力，用来解释受控 workspace patch 的早期形态。当前推荐主线是 `agent develop` / `agent repair` 的真实 tool-calling loop。
 
-Direct Code Lane upgrades the agent from a ModSpec-only path to a ModSpec-first hybrid path:
+## 它现在是什么
 
-```text
-Natural language
-  -> ModSpec-first routing
-  -> deterministic NeoForge generation
-  -> optional structured Direct Code Patch
-  -> audit + Gradle build
-  -> repair analysis + rollback evidence
-  -> replay
-```
+Direct Code Lane 不是通用代码编辑器。它只允许结构化 workspace patch，并且必须经过：
 
-It is not an unbounded coding agent. The LLM may request source edits only as structured JSON, and the executor applies them only inside the generated mod workspace after review.
+- path allowlist；
+- review；
+- snapshot；
+- diff/report；
+- audit/build gate；
+- rollback evidence。
 
-## Relationship To Free-Code Lab
+这套思想已经进入 RC1 的 `apply_structured_patch` tool：LLM 不写自由 diff，而是提交受控 JSON action，由 runtime 执行。
 
-Direct Code Lane is part of a production `agent generate` / `agent modify` run. It extends one generated workspace with a reviewed patch and accepts the run only after audit plus Gradle build pass.
-
-Free-Code Lab is different: it copies an existing generated workspace into `workspace/free-code-lab-runs/<run-id>/workspace`, applies experimental structured patches there, and writes a harvest candidate. Lab runs are for discovering generate gaps; they do not change the original workspace and do not update this tool's generator code automatically.
-
-Use this rule of thumb:
-
-- Direct Code Lane: "this agent run needs a bounded source patch to finish."
-- Free-Code Lab: "stable generate cannot express this yet; experiment first, then decide whether to harvest into the generator."
-
-## Code Lanes
-
-`agent generate` and `agent modify` support:
+## 和 RC1 Tool Loop 的关系
 
 ```text
---code-lane hybrid   # default: ModSpec first, Direct Code only when requested or needed
---code-lane modspec  # ModSpec only, no Direct Code writes
---code-lane direct   # generate/load the workspace baseline, then apply a Direct Code plan
+Direct Code Lane idea
+-> structured patch contract
+-> snapshot / rollback evidence
+-> RC1 apply_structured_patch tool
 ```
 
-Non-agent commands keep their existing behavior.
+面试或展示时可以讲：Direct Code Lane 是项目演进过程中把“LLM 不能自由写代码”落实到工程边界的早期实验；RC1 已经把这个边界放入 develop/repair 的真实 tool-calling loop。
 
-## Patch Format
+## 不要误解
 
-The first version supports only:
+- 不把它说成当前主线。
+- 不把它说成 MCP。
+- 不说它能修改本工具项目源码。
+- 不说它能绕过 audit/build。
 
-- `write_file`: write a complete file.
-- `replace_text`: perform exactly one literal search/replace in an existing file.
-
-Each change must include:
-
-```json
-{
-  "path": "src/main/java/com/generated/demo/directcode/Demo.java",
-  "operation": "write_file",
-  "content": "package com.generated.demo.directcode;\n\npublic final class Demo {\n}\n",
-  "reason": "Add a compile-verifiable helper class.",
-  "risk_level": "low"
-}
-```
-
-`replace_text` uses `search` and `replace` instead of `content`. Zero matches or multiple matches fail the plan.
-
-## Safety Boundaries
-
-Allowed roots are:
-
-```text
-src/main/java
-src/main/resources
-build.gradle
-gradle.properties
-.agent
-```
-
-The reviewer rejects absolute paths, traversal segments, paths outside the workspace, `.git`, `gradle/wrapper`, build output folders, binary artifacts, unsupported operations, missing reasons, unsafe Java tokens, and Java package declarations that do not match their source path.
-
-Gradle file edits are allowed by policy but reported as higher scrutiny and must pass the build gate.
-
-## Evidence
-
-Every Direct Code run writes:
-
-```text
-.agent/direct-code-plan.json
-.agent/direct-code-plan.md
-.agent/direct-code-review.json
-.agent/direct-code-diff.md
-.agent/direct-code-report.json
-.agent/direct-code-rollback-report.json
-.agent/direct-code-snapshots/
-```
-
-`agent-run.json` and replay evidence include `direct_code_reviewer` and `direct_code_agent` roles when the lane is used.
-
-## Gates And Rollback
-
-Direct Code Lane forces audit and Gradle build, even if the caller passes `--no-build`. A Direct Code run is accepted only when:
-
-- the structured patch review passes;
-- the patch applies cleanly;
-- workspace audit passes;
-- Gradle build passes.
-
-If review, apply, audit, or build fails, the rollback report marks rollback as `recommended` and lists changed files plus snapshots that can be restored.
-
-## Current Limitations
-
-- The lane supports only `write_file` and exact single-match `replace_text`; it does not support free-form diffs, AST patches, file moves, deletes, or fuzzy multi-hunk edits.
-- Apply is not a full transaction. Snapshots are written before changes, and rollback is reported, but failed plans are not automatically restored yet.
-- The reviewer uses path policy, token checks, Java package checks, Gradle warnings, audit, and build gates. It is not a complete Java static analyzer or OS-level sandbox.
-- Failed Direct Code runs do not trigger an automatic second LLM repair patch in this version.
-- Build is required for acceptance, so Direct Code runs are slower and more environment-sensitive than ModSpec-only runs.
-
-See [project-limitations.md](../总览/project-limitations.md) for the broader project gap list.
-For the experimental learning loop around generate gaps, see [capability-harvest-loop.md](../Agent与能力/capability-harvest-loop.md).
+当前主线见 [agent-workflow.md](agent-workflow.md) 和 [tool-calling-contract.md](tool-calling-contract.md)。

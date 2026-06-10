@@ -1,5 +1,7 @@
 ﻿# 规格与生成
 
+RC1 仍然以 ModSpec-first 为核心：LLM 负责把目标收敛到受控结构或工具 action，最终 Java、资源、数据包和报告仍由确定性 generator 与受控 patch 通道产出。
+
 > 这里放 ModSpec、DomainSpec 和各类 DSL。它们是生成器的输入真相源。
 
 ## 推荐顺序

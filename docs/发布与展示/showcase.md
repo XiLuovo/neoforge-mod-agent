@@ -1,91 +1,29 @@
-# V1.8 Showcase Reports
+# RC1 Showcase
 
-> 文档定位：这是 showcase 报告专项材料，不是主学习入口。需要理解一键展示报告时再读。
+RC1 showcase 的目标是让项目展示为一个可验证、可回放、可评测的领域 Coding Agent。
 
-V1.8 adds a portfolio-friendly showcase command:
+## 展示顺序
 
-```powershell
-py -3.11 -m agent.cli showcase --json
-```
+1. 打开 [../总览/rc1-learning-guide.md](../总览/rc1-learning-guide.md)，用 1 分钟说明项目定位。
+2. 运行 `agent develop`，展示 baseline generation 和 tool-call trace。
+3. 运行 `agent repair`，展示 structured patch、snapshot、rollback evidence。
+4. 打开 `.agent/reviewer-report.json`，说明 reviewer 只审查风险，不替代 gate。
+5. 运行 `agent bench`，展示 trace-backed metrics。
+6. 打开 [agent-rc1-showcase.md](agent-rc1-showcase.md)，对比普通 generator 和当前 agent。
 
-The command runs a curated offline demo flow and writes a consolidated report. It is designed for GitHub READMEs, internship demos, and interview walkthroughs.
-
-## What Showcase Runs
-
-The default showcase flow runs:
-
-- environment doctor preflight without Java diagnostics
-- mock LLM multi-role `agent generate`
-- mock LLM multi-role `agent modify`
-- offline eval smoke benchmark
-- optional quality gate when `--quality-gate` is passed
-
-Default showcase runs do not call Gradle build, so they stay fast and deterministic.
-
-## Artifacts
-
-Reports are written under:
-
-```text
-workspace/showcase-runs/<run-id>/.agent/showcase-report.json
-workspace/showcase-runs/<run-id>/.agent/showcase-report.md
-```
-
-Generated demo workspaces are isolated under:
-
-```text
-workspace/showcase-runs/<run-id>/workspaces/
-```
-
-## Recommended Commands
-
-Fast offline showcase:
+## 推荐命令
 
 ```powershell
 $env:PYTHONPATH = (Resolve-Path .\src)
-py -3.11 -m agent.cli showcase --run-name v18-showcase-smoke --json
+py -3.11 -m agent.cli agent develop "Create a ruby mod with a ruby item, ruby block and ruby ore." --planner llm --llm-provider mock --workspace-name rc1-showcase --no-build --json
+py -3.11 -m agent.cli agent repair rc1-showcase --goal "Fix audit failures using safe structured patches." --planner llm --llm-provider mock --max-iterations 5 --no-build --audit --json
+py -3.11 -m agent.cli agent bench --llm-provider mock --eval-limit 1 --repair-limit 1 --no-build --audit --json
 ```
 
-Include the default fast quality gate:
+## 讲解重点
 
-```powershell
-py -3.11 -m agent.cli showcase --run-name v18-showcase-full --quality-gate --json
-```
-
-Attempt Gradle build for the agent generate/modify showcase cases:
-
-```powershell
-py -3.11 -m agent.cli showcase --run-name v18-showcase-build --build --json
-```
-
-## 中文说明
-
-V1.8 的 `showcase` 命令是为了“项目展示”服务的。它不是新增游戏玩法，而是把当前已经完成的能力串成一条可复现 demo：
-
-- 环境诊断 doctor
-- mock LLM 多 Agent 生成
-- mock LLM 多 Agent 修改已有项目
-- eval smoke 评测
-- 可选 quality-gate
-
-常用命令：
-
-```powershell
-$env:PYTHONPATH = (Resolve-Path .\src)
-py -3.11 -m agent.cli showcase --run-name v18-showcase-smoke --json
-```
-
-报告位置：
-
-```text
-workspace/showcase-runs/<run-id>/.agent/showcase-report.json
-workspace/showcase-runs/<run-id>/.agent/showcase-report.md
-```
-
-展示用 workspace 会隔离在：
-
-```text
-workspace/showcase-runs/<run-id>/workspaces/
-```
-
-这条命令很适合用于简历项目说明：它能证明项目不是单点 demo，而是已经具备 Agent 编排、结构化审计、评测和质量门禁这一整套工程链路。
+- 不是让 LLM 一次性写完整 Mod；
+- planner、generator、tool loop、reviewer、audit/build 各司其职；
+- tool call 和 reviewer 都有真实 JSON evidence；
+- benchmark 读真实 trace，而不是静态报告；
+- Minecraft runtime 仍是边界，不要夸大成自动游戏内验收。

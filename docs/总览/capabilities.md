@@ -1,82 +1,31 @@
-﻿# Capability Matrix
+# RC1 Capability Matrix
 
-> 文档定位：这是能力矩阵查证文件，不建议从头读。需要确认当前能力边界时再查本文。历史版本流水账见 [version-history.md](../历史档案/version-history.md)。
+> 这是当前能力矩阵。历史版本能力保留在历史档案；当前公开展示以 RC1 主线为准。
 
-## Current Stable Capabilities
-
-| Capability | Status | Notes |
+| 能力 | 状态 | 当前说明 |
 | --- | --- | --- |
-| `minecraft.neoforge` domain | stable | 当前唯一完整落地 domain。 |
-| `ModSpec` | stable | 结构化真相源，驱动 generator / audit / repair。 |
-| item / block / ore | stable | 基础内容、资源、模型、掉落和 worldgen。 |
-| food / sword / tool / armor | stable | 常见装备、材料和配方生成。 |
-| recipe / loot / tag | stable | 受控 JSON 资源生成。 |
-| Behavior DSL | stable | 事件-条件-动作行为模板。 |
-| Machine DSL | stable | 基础 BlockEntity / Menu / Screen / machine GUI 模板。 |
-| Entity DSL | stable | 受控 entity / mob 骨架。 |
-| Progression / Quest DSL | stable | 玩法线、任务、advancement 和 guidebook 结构。 |
-| World / Structure DSL | stable | 受控 world/structure 资源和预览。 |
-| Programmatic textures | stable | 确定性 PNG、atlas、资源质量报告。 |
-| Agent workflow | stable | planner / reviewer / executor / auditor / repair / trace。 |
-| RAG knowledge base | stable | 本地 NeoForge 知识检索，服务 planner 和 repair。 |
-| mock LLM provider | stable | 离线稳定回归和学习。 |
-| real LLM provider | experimental | OpenAI-compatible provider、health check、retry、fallback。 |
-| audit / build / repair | stable | 静态审计、Gradle build、managed-file repair-loop。 |
-| eval / benchmark / replay | stable | 能力评测、模型/版本对比、历史 run 回放。 |
-| dashboard / showcase | stable | 本地演示和静态报告入口。 |
-| tool manifest | stable contract | 内部工具契约；不是完整 MCP server。 |
+| ModSpec-first planning | stable | 用户目标先收敛为 intent contract 和 `ModSpec`。 |
+| Deterministic generator | stable | 生成 Java、JSON、PNG、resources 和 `.agent` baseline evidence。 |
+| Real tool-calling loop | stable | LLM 在 planner 之外选择 `retrieve_rag`、`read_file`、`search_files`、`apply_structured_patch`、`run_audit`、`run_build`、`finish`。 |
+| Structured patch safety | stable | patch 受 path safety、snapshot、diff、report 和 rollback evidence 约束。 |
+| RAG-assisted repair/refine | stable | planner、develop、repair 和 reviewer context 可引用本地 NeoForge 知识。 |
+| LLM reviewer | stable | 审查覆盖、unsupported request、patch risk 和 recommended checks；不替代 audit/build gate。 |
+| Audit/build gate | stable | deterministic gate 是最终验收依据。 |
+| Trace-backed benchmark | stable | `agent bench` 运行真实 agent 流程，并从真实 trace 汇总指标。 |
+| Replayable evidence | stable | `.agent` 中保留 planner、tool calls、reviewer、audit/build、patch 和 rollback 证据。 |
+| Direct Code Lane | auxiliary | 旧主线的受控 workspace patch 通道，可作为辅助/兼容能力讲解。 |
+| Free-Code Lab / harvest | auxiliary | 隔离实验区，用于探索 generator gap，不自动改稳定 generator。 |
+| Minecraft runtime harness | not automated | 仍需人工进游戏或未来 dedicated harness。 |
 
-## Controlled Extension Capabilities
+## 推荐演示能力
 
-| Capability | Status | Boundary |
-| --- | --- | --- |
-| Controlled Java Extension | stable controlled path | 通过 ModSpec 字段生成 extension package 下的受控 helper class。 |
-| Controlled patch-agent | stable controlled path | modify 场景的 managed-file patch/report/rollback evidence。 |
-| Direct Code Lane | V8.4 production lane | `agent generate` / `agent modify` 的结构化 workspace 补丁通道。 |
-| Free-Code Lab | V8.5 experimental lane | generate gap 的隔离实验通道，不改原 workspace，不自动改 generator。 |
-| Capability Harvest Loop | V8.5 process | 从实验样本到 generator/audit/test 固化的能力采集闭环。 |
+1. `agent develop` 生成 baseline 并进入真实 tool-calling refine loop。
+2. `agent repair` 基于 audit/build observation、RAG、文件内容和 reviewer observation 修复 workspace。
+3. `agent bench` 输出 trace-backed metrics，并链接每个 case 的 evidence。
 
-Direct Code Lane 细节见 [direct-code-lane.md](../Agent与能力/direct-code-lane.md)。Free-Code Lab 和 harvest candidate 细节见 [capability-harvest-loop.md](../Agent与能力/capability-harvest-loop.md)。
+## 不建议夸大的能力
 
-## Current Non-Goals
-
-- 不承诺任意 Java / Gradle / datapack 自由生成。
-- 不承诺复杂多方块结构、复杂网络同步、完整 runtime 自动化测试。
-- 不把 mock LLM 成功当成真实 LLM 成功。
-- 不把 tool manifest 宣称为完整 MCP server。
-- 不把 Free-Code Lab 的实验代码自动合并进稳定 generator。
-
-更完整限制见 [project-limitations.md](../总览/project-limitations.md)。
-
-## Useful Commands
-
-```powershell
-py -3.11 -m agent.cli capabilities --run-name local-capabilities --json
-py -3.11 -m agent.cli tools-manifest --run-name local-tools --json
-py -3.11 -m unittest discover -s tests -v
-```
-
-## Evidence Files
-
-常见证据入口：
-
-- `.agent/modspec.json`
-- `.agent/generation-summary.json`
-- `.agent/audit-report.json`
-- `.agent/agent-run.json`
-- `.agent/prompt-trace.json`
-- `.agent/direct-code-*.json`
-- `.agent/free-code-report.json`
-- `.agent/harvest-candidate.json`
-- benchmark / replay / evidence-chain HTML 或 Markdown 报告
-
-## Planned Or Limited Areas
-
-| Area | Status |
-| --- | --- |
-| `spring.api` domain | planned registry entry, not implemented domain. |
-| `unity.component` domain | planned registry entry, not implemented domain. |
-| AST-aware direct-code patching | not implemented. |
-| automatic Direct Code repair-loop | not implemented. |
-| Minecraft runtime smoke automation | not implemented. |
-| first harvested generator upgrade | next focus, likely advanced machine GUI / BlockEntity. |
+- 不说“通用 coding agent”。
+- 不说“LLM 可以任意改项目代码”。
+- 不说“reviewer 决定最终成功”。
+- 不说“自动完成 Minecraft runtime 验收”。
