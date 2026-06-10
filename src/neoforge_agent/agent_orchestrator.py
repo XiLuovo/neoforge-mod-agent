@@ -57,6 +57,7 @@ class AgentOrchestrator:
         require_llm: bool = False,
         code_lane: str = "hybrid",
         max_iterations: int = 1,
+        rag_mode: str = "auto",
     ) -> AgentRunResult:
         return self.runtime.run_generate(
             AgentRuntimeRequest(
@@ -74,6 +75,7 @@ class AgentOrchestrator:
                     "require_llm": require_llm,
                     "code_lane": code_lane,
                     "max_iterations": max_iterations,
+                    "rag_mode": _normalize_rag_mode(rag_mode),
                 },
             )
         )
@@ -93,6 +95,7 @@ class AgentOrchestrator:
         require_llm: bool = False,
         code_lane: str = "hybrid",
         max_iterations: int = 5,
+        rag_mode: str = "auto",
     ) -> AgentRunResult:
         return self.runtime.run_generate(
             AgentRuntimeRequest(
@@ -110,6 +113,7 @@ class AgentOrchestrator:
                     "require_llm": require_llm,
                     "code_lane": code_lane,
                     "max_iterations": max_iterations,
+                    "rag_mode": _normalize_rag_mode(rag_mode),
                 },
             )
         )
@@ -406,6 +410,7 @@ class AgentOrchestrator:
         max_iterations: int = 5,
         run_build: bool = True,
         run_audit: bool = True,
+        rag_mode: str = "auto",
     ) -> AgentRunResult:
         workspace = workspace.resolve()
         steps: list[AgentStep] = [
@@ -467,6 +472,7 @@ class AgentOrchestrator:
                 initial_audit=audit_payload,
                 root_causes=root_causes,
                 repair_plan=repair_plan,
+                rag_mode=_normalize_rag_mode(rag_mode),
             )
             repair_payload = tool_result.to_dict()
             steps.append(
@@ -524,6 +530,46 @@ class AgentOrchestrator:
             )
             repair_payload["reviewer"] = reviewer_result.to_dict()
             prompt_traces = [*prompt_traces, reviewer_result.prompt_trace]
+            if _reviewer_requires_more_rag(reviewer_result.to_dict()) and tool_result.iterations < max_iterations:
+                followup_result = self.tool_calling_repair_agent.run(
+                    workspace,
+                    goal=goal,
+                    llm_provider=llm_provider,
+                    max_iterations=max_iterations - tool_result.iterations,
+                    run_build=run_build,
+                    run_audit=run_audit,
+                    initial_build=final_build_payload,
+                    initial_audit=final_audit_payload,
+                    root_causes=root_causes,
+                    repair_plan=repair_plan,
+                    extra_context={"reviewer_observation": reviewer_result.to_dict()},
+                    rag_mode="on",
+                )
+                repair_payload["reviewer_requested_repair"] = followup_result.to_dict()
+                repair_payload["final_build"] = followup_result.final_build
+                repair_payload["final_audit"] = followup_result.final_audit
+                repair_payload["success"] = followup_result.success
+                repair_payload["repair_success"] = followup_result.repair_success
+                combined_trace = [
+                    *list(repair_payload.get("tool_call_trace") or []),
+                    *list(followup_result.trace),
+                ]
+                repair_payload["tool_call_trace"] = combined_trace
+                repair_payload["tool_calls_count"] = len(combined_trace)
+                repair_payload["iterations"] = len(combined_trace)
+                if followup_result.repair_rag:
+                    repair_payload["repair_rag"] = followup_result.repair_rag
+                if followup_result.structured_patch:
+                    repair_payload["structured_patch"] = followup_result.structured_patch
+                if followup_result.rag_decision_trace:
+                    repair_payload["rag_decision_trace"] = [
+                        *list(repair_payload.get("rag_decision_trace") or []),
+                        *list(followup_result.rag_decision_trace),
+                    ]
+                prompt_traces.extend(followup_result.prompt_traces)
+                final_build_payload = followup_result.final_build
+                final_audit_payload = followup_result.final_audit
+                success = followup_result.success
         except Exception as exc:  # Tool-calling repair failures must be replayable in agent-run.json.
             error_text = f"{type(exc).__name__}: {exc}"
             repair_payload = {
@@ -2031,6 +2077,7 @@ class NeoForgeRuntimePlugin:
                         "baseline_generation": execution.payload,
                         "baseline_reviewer_observation": baseline_reviewer.to_dict(),
                     },
+                    rag_mode=str(request.options.get("rag_mode", "auto")),
                 )
                 payload = tool_result.to_dict()
                 steps.append(
@@ -2088,7 +2135,10 @@ class NeoForgeRuntimePlugin:
                 payload["reviewer"] = final_reviewer.to_dict()
                 prompt_traces.append(final_reviewer.prompt_trace)
                 max_iterations = int(request.options.get("max_iterations", 1) or 1)
-                if final_reviewer.decision == "needs_repair" and tool_result.iterations < max_iterations:
+                if (
+                    (final_reviewer.decision == "needs_repair" or _reviewer_requires_more_rag(final_reviewer.to_dict()))
+                    and tool_result.iterations < max_iterations
+                ):
                     followup_result = self.orchestrator.tool_calling_repair_agent.run(
                         execution.workspace,
                         goal=request.request,
@@ -2108,6 +2158,7 @@ class NeoForgeRuntimePlugin:
                             "baseline_generation": execution.payload,
                             "reviewer_observation": final_reviewer.to_dict(),
                         },
+                        rag_mode="on" if _reviewer_requires_more_rag(final_reviewer.to_dict()) else str(request.options.get("rag_mode", "auto")),
                     )
                     payload["reviewer_requested_repair"] = followup_result.to_dict()
                     payload["final_build"] = followup_result.final_build
@@ -2126,6 +2177,11 @@ class NeoForgeRuntimePlugin:
                         payload["structured_patch"] = followup_result.structured_patch
                     if followup_result.repair_rag:
                         payload["repair_rag"] = followup_result.repair_rag
+                    if followup_result.rag_decision_trace:
+                        payload["rag_decision_trace"] = [
+                            *list(payload.get("rag_decision_trace") or []),
+                            *list(followup_result.rag_decision_trace),
+                        ]
                     prompt_traces.extend(followup_result.prompt_traces)
                     final_reviewer = self.orchestrator._run_llm_reviewer(
                         workspace=execution.workspace,
@@ -2322,6 +2378,24 @@ def _normalize_code_lane(value: str) -> str:
     if normalized not in {"hybrid", "modspec", "direct"}:
         raise ValueError(f"Unsupported code lane: {value}")
     return normalized
+
+
+def _normalize_rag_mode(value: str) -> str:
+    normalized = str(value or "auto").strip().lower()
+    if normalized not in {"auto", "on", "off"}:
+        raise ValueError(f"Unsupported RAG mode: {value}")
+    return normalized
+
+
+def _reviewer_requires_more_rag(payload: dict[str, Any]) -> bool:
+    return bool(
+        isinstance(payload, dict)
+        and (
+            payload.get("requires_more_rag")
+            or payload.get("evidence_sufficiency") == "insufficient"
+            or payload.get("unsupported_citation_gaps")
+        )
+    )
 
 
 def _merge_generated_files(*groups: list[str]) -> list[str]:

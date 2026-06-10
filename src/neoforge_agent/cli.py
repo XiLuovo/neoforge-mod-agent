@@ -489,6 +489,7 @@ def build_parser() -> argparse.ArgumentParser:
     agent_repair_parser.add_argument("--planner", choices=["rules", "llm", "auto"], default="llm", help="Planner label recorded in the repair trace.")
     agent_repair_parser.add_argument("--llm-provider", choices=["mock", "openai-compatible"], default="mock", help="LLM provider label recorded in the repair trace.")
     agent_repair_parser.add_argument("--max-iterations", type=int, default=5, help="Maximum repair-loop iterations.")
+    agent_repair_parser.add_argument("--rag-mode", choices=["auto", "on", "off"], default="auto", help="Agentic RAG policy mode for repair tool calls.")
     repair_build_group = agent_repair_parser.add_mutually_exclusive_group()
     repair_build_group.add_argument("--build", dest="build", action="store_true", help="Run Gradle build during repair checks.")
     repair_build_group.add_argument("--no-build", dest="build", action="store_false", help="Skip Gradle build during repair checks.")
@@ -511,6 +512,8 @@ def build_parser() -> argparse.ArgumentParser:
     agent_bench_parser.add_argument("--repair-limit", type=int, default=3, help="Number of injected failure repair cases.")
     agent_bench_parser.add_argument("--run-real", action="store_true", help="Actually run a real OpenAI-compatible provider instead of only preflighting it.")
     agent_bench_parser.add_argument("--require-real", action="store_true", help="Fail if the real provider is not configured.")
+    agent_bench_parser.add_argument("--rag-mode", choices=["auto", "on", "off"], default="auto", help="Agentic RAG policy mode for benchmarked agent runs.")
+    agent_bench_parser.add_argument("--rag-ablation", action="store_true", help="Run paired RAG-on/RAG-off benchmark cases and report deltas.")
     bench_build_group = agent_bench_parser.add_mutually_exclusive_group()
     bench_build_group.add_argument("--build", dest="build", action="store_true", help="Run Gradle build for benchmark cases.")
     bench_build_group.add_argument("--no-build", dest="build", action="store_false", help="Skip Gradle build for benchmark cases.")
@@ -1252,6 +1255,10 @@ def _run_agent_command(args: argparse.Namespace, config: AppConfig) -> int:
             llm_provider=args.llm_provider,
             run_build=args.build,
             run_audit=args.audit,
+            rag_mode=args.rag_mode,
+            rag_ablation=args.rag_ablation,
+            run_real=args.run_real,
+            require_real=args.require_real,
         )
         payload = result.to_dict()
         _print_payload(payload, as_json=args.json)
@@ -1280,6 +1287,7 @@ def _run_agent_command(args: argparse.Namespace, config: AppConfig) -> int:
             "require_llm": args.require_llm,
             "code_lane": args.code_lane,
             "max_iterations": args.max_iterations,
+            "rag_mode": getattr(args, "rag_mode", "auto"),
         }
         if args.agent_command == "develop":
             result = orchestrator.run_develop(args.request, **run_kwargs)
@@ -1294,6 +1302,7 @@ def _run_agent_command(args: argparse.Namespace, config: AppConfig) -> int:
             max_iterations=args.max_iterations,
             run_build=args.build,
             run_audit=args.audit,
+            rag_mode=args.rag_mode,
         )
     else:
         result = orchestrator.run_modify(

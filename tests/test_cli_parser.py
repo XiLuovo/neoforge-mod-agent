@@ -582,6 +582,8 @@ class CliParserTests(unittest.TestCase):
                 "mock",
                 "--max-iterations",
                 "4",
+                "--rag-mode",
+                "on",
                 "--no-build",
                 "--json",
             ]
@@ -592,6 +594,7 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(args.workspace, "workspace/unit")
         self.assertEqual(args.goal, "Fix audit failures.")
         self.assertEqual(args.max_iterations, 4)
+        self.assertEqual(args.rag_mode, "on")
         self.assertFalse(args.build)
         self.assertTrue(args.audit)
         self.assertTrue(args.json)
@@ -622,6 +625,36 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(args.eval_limit, 1)
         self.assertEqual(args.repair_limit, 1)
         self.assertTrue(args.build)
+        self.assertTrue(args.audit)
+        self.assertTrue(args.json)
+
+    def test_agent_bench_rag_ablation_arguments_parse(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "agent",
+                "bench",
+                "--suite",
+                "examples/agentic_rag_ablation.json",
+                "--llm-provider",
+                "openai-compatible",
+                "--run-real",
+                "--require-real",
+                "--rag-mode",
+                "auto",
+                "--rag-ablation",
+                "--audit",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.command, "agent")
+        self.assertEqual(args.agent_command, "bench")
+        self.assertEqual(args.suite, "examples/agentic_rag_ablation.json")
+        self.assertEqual(args.llm_provider, "openai-compatible")
+        self.assertTrue(args.run_real)
+        self.assertTrue(args.require_real)
+        self.assertEqual(args.rag_mode, "auto")
+        self.assertTrue(args.rag_ablation)
         self.assertTrue(args.audit)
         self.assertTrue(args.json)
 

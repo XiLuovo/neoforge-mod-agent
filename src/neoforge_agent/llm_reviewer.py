@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .agent_models import AgentPromptTrace
+from .agentic_rag import sensitive_patch_paths
 from .config import AppConfig
 from .llm_client import LLMClient, create_llm_client
 
@@ -23,6 +24,9 @@ Response schema:
   "unsupported_or_risky_requests": ["short strings"],
   "patch_risks": ["short strings"],
   "recommended_checks": ["short strings"],
+  "evidence_sufficiency": "sufficient|insufficient|not_required",
+  "unsupported_citation_gaps": ["short strings"],
+  "requires_more_rag": false,
   "decision": "approve|needs_repair|reject",
   "confidence": 0.0
 }
@@ -31,6 +35,7 @@ Response schema:
 MAX_REVIEW_PROMPT_CHARS = 80_000
 VALID_COVERAGE = {"pass", "partial", "fail"}
 VALID_DECISIONS = {"approve", "needs_repair", "reject"}
+VALID_EVIDENCE_SUFFICIENCY = {"sufficient", "insufficient", "not_required"}
 
 
 @dataclass(slots=True)
@@ -99,6 +104,14 @@ class LLMReviewer:
         )
         completion = client.complete_json(LLM_REVIEWER_SYSTEM_PROMPT, user_prompt)
         report, warnings = normalize_reviewer_payload(completion.parsed_json)
+        warnings.extend(
+            enforce_evidence_sufficiency(
+                report,
+                rag=rag or {},
+                tool_call_trace=tool_call_trace or [],
+                changed_files=changed_files or [],
+            )
+        )
         trace = AgentPromptTrace(
             role="reviewer_agent",
             planner_mode="llm_reviewer",
@@ -145,6 +158,7 @@ class LLMReviewer:
             "modspec": _compact(modspec or {}),
             "rag_snippets": _compact(_rag_snippets(rag or {})),
             "tool_call_trace_summary": _compact(_tool_trace_summary(tool_call_trace or [])),
+            "rag_evidence_summary": _compact(_rag_evidence_summary(rag or {}, tool_call_trace or [])),
             "changed_files_summary": list(changed_files or []),
             "audit_result": _compact(audit_result or {}),
             "build_result": _compact(build_result or {}),
@@ -153,6 +167,7 @@ class LLMReviewer:
                 "final_gate_authority": "deterministic audit/build",
                 "reviewer_can_recommend_repair": True,
                 "reviewer_can_override_failed_gate": False,
+                "sensitive_patch_requires_rag_or_file_evidence": True,
                 "hidden_chain_of_thought": "do not include",
             },
         }
@@ -179,6 +194,15 @@ def normalize_reviewer_payload(raw: dict[str, Any] | None) -> tuple[dict[str, An
     except (TypeError, ValueError):
         confidence_float = 0.0
         warnings.append("Reviewer confidence was not numeric.")
+    evidence_sufficiency = str(raw.get("evidence_sufficiency", "") or "").strip().lower()
+    if evidence_sufficiency not in VALID_EVIDENCE_SUFFICIENCY:
+        evidence_sufficiency = "insufficient" if raw.get("requires_more_rag") else "sufficient"
+        warnings.append("Reviewer evidence_sufficiency was missing or invalid; a safe default was used.")
+    requires_more_rag = bool(raw.get("requires_more_rag")) or evidence_sufficiency == "insufficient"
+    if requires_more_rag and decision == "approve":
+        decision = "needs_repair"
+        coverage_status = "partial" if coverage_status == "pass" else coverage_status
+        warnings.append("Reviewer requested more RAG; decision was downgraded to needs_repair.")
     report = {
         "coverage_status": coverage_status,
         "covered_requirements": _string_list(raw.get("covered_requirements")),
@@ -186,10 +210,50 @@ def normalize_reviewer_payload(raw: dict[str, Any] | None) -> tuple[dict[str, An
         "unsupported_or_risky_requests": _string_list(raw.get("unsupported_or_risky_requests")),
         "patch_risks": _string_list(raw.get("patch_risks")),
         "recommended_checks": _string_list(raw.get("recommended_checks")),
+        "evidence_sufficiency": evidence_sufficiency,
+        "unsupported_citation_gaps": _string_list(raw.get("unsupported_citation_gaps")),
+        "requires_more_rag": requires_more_rag,
         "decision": decision,
         "confidence": confidence_float,
     }
     return report, warnings
+
+
+def enforce_evidence_sufficiency(
+    report: dict[str, Any],
+    *,
+    rag: dict[str, Any],
+    tool_call_trace: list[dict[str, Any]],
+    changed_files: list[str],
+) -> list[str]:
+    warnings: list[str] = []
+    patch_paths = _changed_files_from_trace(tool_call_trace)
+    sensitive_paths = sensitive_patch_paths(patch_paths)
+    if not sensitive_paths:
+        if report.get("evidence_sufficiency") not in VALID_EVIDENCE_SUFFICIENCY:
+            report["evidence_sufficiency"] = "not_required"
+        return warnings
+
+    if _has_rag_citation_evidence(rag, tool_call_trace) or _has_file_evidence(tool_call_trace, sensitive_paths):
+        if report.get("evidence_sufficiency") == "insufficient" and not report.get("requires_more_rag"):
+            report["evidence_sufficiency"] = "sufficient"
+        return warnings
+
+    gap = "Sensitive NeoForge patch lacks RAG citation or file-read evidence: " + ", ".join(sensitive_paths)
+    gaps = report.get("unsupported_citation_gaps")
+    if not isinstance(gaps, list):
+        gaps = []
+    if gap not in gaps:
+        gaps.append(gap)
+    report["unsupported_citation_gaps"] = gaps
+    report["evidence_sufficiency"] = "insufficient"
+    report["requires_more_rag"] = True
+    if report.get("decision") == "approve":
+        report["decision"] = "needs_repair"
+        if report.get("coverage_status") == "pass":
+            report["coverage_status"] = "partial"
+    warnings.append("Reviewer evidence sufficiency gate required more RAG for a sensitive patch.")
+    return warnings
 
 
 def reviewer_checks(report: dict[str, Any]) -> list[dict[str, str]]:
@@ -208,6 +272,16 @@ def reviewer_checks(report: dict[str, Any]) -> list[dict[str, str]]:
             "id": "patch_risks",
             "status": "pass" if not report.get("patch_risks") else "warning",
             "summary": f"Patch risks: {len(report.get('patch_risks') or [])}",
+        },
+        {
+            "id": "evidence_sufficiency",
+            "status": str(report.get("evidence_sufficiency", "sufficient")),
+            "summary": f"Evidence sufficiency: {report.get('evidence_sufficiency', 'sufficient')}",
+        },
+        {
+            "id": "unsupported_citation_gaps",
+            "status": "pass" if not report.get("unsupported_citation_gaps") else "warning",
+            "summary": f"Unsupported citation gaps: {len(report.get('unsupported_citation_gaps') or [])}",
         },
         {
             "id": "decision",
@@ -240,6 +314,9 @@ def _rag_snippets(rag: dict[str, Any]) -> dict[str, Any]:
             for item in hits[:8]
             if isinstance(item, dict)
         ],
+        "queries": rag.get("queries") if isinstance(rag.get("queries"), list) else [],
+        "citations": rag.get("citations") if isinstance(rag.get("citations"), list) else [],
+        "sufficiency": rag.get("sufficiency"),
     }
 
 
@@ -256,9 +333,88 @@ def _tool_trace_summary(trace: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "action": entry.get("action"),
                 "summary": observation.get("summary"),
                 "success": observation.get("success"),
+                "citations": observation.get("citations") or observation.get("citation_ids") or [],
+                "sufficiency": observation.get("sufficiency"),
             }
         )
     return summary
+
+
+def _rag_evidence_summary(rag: dict[str, Any], tool_call_trace: list[dict[str, Any]]) -> dict[str, Any]:
+    retrieve_steps = []
+    patch_steps = []
+    for entry in tool_call_trace:
+        if not isinstance(entry, dict):
+            continue
+        observation = entry.get("observation") if isinstance(entry.get("observation"), dict) else {}
+        if entry.get("action") == "retrieve_rag":
+            retrieve_steps.append(
+                {
+                    "iteration": entry.get("iteration"),
+                    "query": observation.get("query"),
+                    "queries": observation.get("queries") or [],
+                    "citations": observation.get("citations") or [],
+                    "sufficiency": observation.get("sufficiency"),
+                    "rag_required": observation.get("rag_required"),
+                }
+            )
+        if entry.get("action") == "apply_structured_patch":
+            patch_steps.append(
+                {
+                    "iteration": entry.get("iteration"),
+                    "changed_files": observation.get("changed_files") or [],
+                    "citation_ids": observation.get("citation_ids") or observation.get("citations") or [],
+                    "success": observation.get("success"),
+                }
+            )
+    return {
+        "rag_hits_count": rag.get("hits_count", 0),
+        "rag_citations": rag.get("citations") or [],
+        "retrieve_steps": retrieve_steps[-6:],
+        "patch_steps": patch_steps[-6:],
+    }
+
+
+def _changed_files_from_trace(trace: list[dict[str, Any]]) -> list[str]:
+    paths: list[str] = []
+    for entry in trace:
+        if not isinstance(entry, dict) or entry.get("action") != "apply_structured_patch":
+            continue
+        observation = entry.get("observation") if isinstance(entry.get("observation"), dict) else {}
+        for path in observation.get("changed_files") or []:
+            text = str(path).strip()
+            if text and text not in paths:
+                paths.append(text)
+    return paths
+
+
+def _has_rag_citation_evidence(rag: dict[str, Any], trace: list[dict[str, Any]]) -> bool:
+    if isinstance(rag.get("citations"), list) and any(str(item).strip() for item in rag["citations"]):
+        return True
+    for entry in trace:
+        if not isinstance(entry, dict):
+            continue
+        observation = entry.get("observation") if isinstance(entry.get("observation"), dict) else {}
+        citations = observation.get("citation_ids") or observation.get("citations")
+        if isinstance(citations, list) and any(str(item).strip() for item in citations):
+            return True
+    return False
+
+
+def _has_file_evidence(trace: list[dict[str, Any]], sensitive_paths: list[str]) -> bool:
+    sensitive_set = {path.replace("\\", "/") for path in sensitive_paths}
+    for entry in trace:
+        if not isinstance(entry, dict) or entry.get("action") not in {"read_file", "search_files"}:
+            continue
+        observation = entry.get("observation") if isinstance(entry.get("observation"), dict) else {}
+        path = str(observation.get("path") or "").replace("\\", "/")
+        if path in sensitive_set:
+            return True
+        matches = observation.get("matches") if isinstance(observation.get("matches"), list) else []
+        for match in matches:
+            if isinstance(match, dict) and str(match.get("path") or "").replace("\\", "/") in sensitive_set:
+                return True
+    return False
 
 
 def _compact(value: Any, *, max_string: int = 2000) -> Any:

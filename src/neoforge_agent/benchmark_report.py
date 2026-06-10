@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .agent_models import AgentRunResult
+from .agentic_rag import citation_coverage
 from .agent_orchestrator import AgentOrchestrator
 from .config import AppConfig
 from .evaluator import BenchmarkEvaluator, EvalRunResult
@@ -137,6 +138,7 @@ class AgentBenchmarkCaseSpec:
     setup_request: str = ""
     breakage: str = ""
     max_iterations: int = 5
+    rag_mode: str | None = None
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "AgentBenchmarkCaseSpec":
@@ -147,6 +149,7 @@ class AgentBenchmarkCaseSpec:
             setup_request=str(payload.get("setup_request") or ""),
             breakage=str(payload.get("breakage") or ""),
             max_iterations=max(1, int(payload.get("max_iterations") or 5)),
+            rag_mode=str(payload.get("rag_mode")) if payload.get("rag_mode") is not None else None,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -157,6 +160,7 @@ class AgentBenchmarkCaseSpec:
             "setup_request": self.setup_request,
             "breakage": self.breakage,
             "max_iterations": self.max_iterations,
+            "rag_mode": self.rag_mode,
         }
 
 
@@ -187,6 +191,11 @@ class AgentBenchmarkCaseResult:
     rollback_evidence_paths: list[str] = field(default_factory=list)
     reviewer_decision: str = ""
     reviewer_coverage_status: str = ""
+    rag_mode: str = "auto"
+    rag_decision_trace_json_path: str | None = None
+    rag_decisions_count: int = 0
+    rag_citations_count: int = 0
+    rag_citation_coverage: float = 0.0
     trace_paths: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -217,6 +226,11 @@ class AgentBenchmarkCaseResult:
             "rollback_evidence_paths": list(self.rollback_evidence_paths),
             "reviewer_decision": self.reviewer_decision,
             "reviewer_coverage_status": self.reviewer_coverage_status,
+            "rag_mode": self.rag_mode,
+            "rag_decision_trace_json_path": self.rag_decision_trace_json_path,
+            "rag_decisions_count": self.rag_decisions_count,
+            "rag_citations_count": self.rag_citations_count,
+            "rag_citation_coverage": self.rag_citation_coverage,
             "trace_paths": list(self.trace_paths),
             "errors": list(self.errors),
         }
@@ -273,16 +287,57 @@ class AgentBenchmarkRunner:
         llm_provider: str = "mock",
         run_build: bool = False,
         run_audit: bool = True,
+        rag_mode: str = "auto",
+        rag_ablation: bool = False,
+        run_real: bool = False,
+        require_real: bool = False,
     ) -> AgentBenchmarkResult:
         run_id = run_name or datetime.now().strftime("%Y%m%d-%H%M%S")
         root_dir = ensure_directory(self.config.workspace_root / "benchmark-runs" / run_id)
         report_dir = ensure_directory(root_dir / ".agent")
+        warnings: list[str] = []
+        errors: list[str] = []
+
+        if llm_provider != "mock":
+            provider_config = inspect_llm_provider_config(llm_provider).to_dict()
+            if not provider_config.get("valid"):
+                message = (
+                    f"Agent benchmark provider `{llm_provider}` is not configured; "
+                    "set NEOFORGE_AGENT_LLM_API_KEY/OPENAI_API_KEY and model before running real acceptance."
+                )
+                if require_real:
+                    errors.append(message)
+                else:
+                    warnings.append(message)
+                return self._write_agent_result(
+                    success=not errors,
+                    run_id=run_id,
+                    report_dir=report_dir,
+                    cases=[],
+                    warnings=warnings,
+                    errors=errors,
+                )
+            if not run_real and not require_real:
+                warnings.append(
+                    f"Agent benchmark provider `{llm_provider}` was preflighted but not executed; "
+                    "pass --run-real or --require-real to run real provider cases."
+                )
+                return self._write_agent_result(
+                    success=True,
+                    run_id=run_id,
+                    report_dir=report_dir,
+                    cases=[],
+                    warnings=warnings,
+                    errors=[],
+                )
+
         scoped_config = replace(self.config, workspace_root=ensure_directory(root_dir / "runs"))
         orchestrator = AgentOrchestrator(scoped_config)
         repair_runner = AutoRepairRunner(scoped_config)
         cases = self._load_cases(cases_path, eval_limit=eval_limit, repair_limit=repair_limit)
+        if rag_ablation:
+            cases = _paired_rag_ablation_cases(cases)
 
-        warnings: list[str] = []
         results: list[AgentBenchmarkCaseResult] = []
         for index, case in enumerate(cases, start=1):
             workspace_name = f"{index:02d}-{case.identifier}"
@@ -296,6 +351,7 @@ class AgentBenchmarkRunner:
                         llm_provider=llm_provider,
                         run_build=run_build,
                         run_audit=run_audit,
+                        rag_mode=case.rag_mode or rag_mode,
                     )
                 )
             except Exception as exc:  # Keep benchmark evidence complete across failing cases.
@@ -306,24 +362,45 @@ class AgentBenchmarkRunner:
                         request=case.request,
                         success=False,
                         workspace=None,
+                        rag_mode=case.rag_mode or rag_mode,
                         errors=[f"{type(exc).__name__}: {exc}"],
                     )
                 )
 
         if not cases:
             warnings.append("No agent benchmark cases were selected.")
-        metrics = agent_benchmark_metrics(results)
-        success = bool(results) and all(case.success for case in results)
-        result = AgentBenchmarkResult(
+        success = _agent_benchmark_success(results, rag_ablation=rag_ablation)
+        return self._write_agent_result(
             success=success,
             run_id=run_id,
             report_dir=report_dir,
             cases=results,
+            warnings=warnings,
+            errors=errors,
+        )
+
+    def _write_agent_result(
+        self,
+        *,
+        success: bool,
+        run_id: str,
+        report_dir: Path,
+        cases: list[AgentBenchmarkCaseResult],
+        warnings: list[str],
+        errors: list[str],
+    ) -> AgentBenchmarkResult:
+        metrics = agent_benchmark_metrics(cases)
+        result = AgentBenchmarkResult(
+            success=success,
+            run_id=run_id,
+            report_dir=report_dir,
+            cases=cases,
             metrics=metrics,
             benchmark_report_json_path=report_dir / "agent-benchmark-report.json",
             benchmark_report_md_path=report_dir / "agent-benchmark-report.md",
             benchmark_report_html_path=report_dir / "agent-benchmark-report.html",
             warnings=warnings,
+            errors=errors,
         )
         write_json(result.benchmark_report_json_path, result.to_dict())
         write_text(result.benchmark_report_md_path, self._render_markdown(result))
@@ -366,6 +443,25 @@ class AgentBenchmarkRunner:
                 setup_request="Create a ruby mod with ruby.",
                 breakage="delete_mods_toml",
                 max_iterations=6,
+                rag_mode="auto",
+            ),
+            AgentBenchmarkCaseSpec(
+                identifier="repair_pack_mcmeta_agentic_rag",
+                mode="repair",
+                request="Fix pack.mcmeta audit failures using cited NeoForge metadata rules.",
+                setup_request="Create a ruby mod with ruby.",
+                breakage="break_pack_mcmeta",
+                max_iterations=6,
+                rag_mode="auto",
+            ),
+            AgentBenchmarkCaseSpec(
+                identifier="repair_recipe_resource_path_agentic_rag",
+                mode="repair",
+                request="Fix recipe/resource path audit failures with RAG-backed evidence.",
+                setup_request="Create a ruby mod with ruby sword recipes.",
+                breakage="break_recipe_json",
+                max_iterations=6,
+                rag_mode="auto",
             )
         ]
         return [
@@ -383,6 +479,7 @@ class AgentBenchmarkRunner:
         llm_provider: str,
         run_build: bool,
         run_audit: bool,
+        rag_mode: str,
     ) -> AgentBenchmarkCaseResult:
         if case.mode == "develop":
             run = orchestrator.run_develop(
@@ -395,6 +492,7 @@ class AgentBenchmarkRunner:
                 run_audit=run_audit,
                 repair=True,
                 max_iterations=case.max_iterations,
+                rag_mode=rag_mode,
             )
             return _agent_benchmark_case_from_run(case, run)
 
@@ -413,6 +511,7 @@ class AgentBenchmarkRunner:
                 return _failed_agent_benchmark_case(case, setup, "Repair benchmark setup generation failed.")
             _inject_agent_benchmark_breakage(setup.workspace, case.breakage)
             regen_probe = repair_runner.run(setup.workspace, max_attempts=1, run_build=run_build, run_audit=run_audit)
+            _inject_agent_benchmark_breakage(setup.workspace, case.breakage)
             run = orchestrator.run_repair(
                 setup.workspace,
                 goal=case.request,
@@ -421,6 +520,7 @@ class AgentBenchmarkRunner:
                 max_iterations=case.max_iterations,
                 run_build=run_build,
                 run_audit=run_audit,
+                rag_mode=rag_mode,
             )
             return _agent_benchmark_case_from_run(case, run, managed_regen_probe=regen_probe.to_dict())
 
@@ -452,7 +552,11 @@ class AgentBenchmarkRunner:
                     f"- reviewer: `{case.reviewer_report_json_path or ''}`",
                     f"- tool calls: `{case.tool_calls_count}`",
                     f"- iterations: `{case.iterations}`",
+                    f"- RAG mode: `{case.rag_mode}`",
                     f"- RAG hits: `{case.rag_hits_count}`",
+                    f"- RAG decisions: `{case.rag_decisions_count}`",
+                    f"- RAG citations: `{case.rag_citations_count}`",
+                    f"- RAG citation coverage: `{case.rag_citation_coverage}`",
                     f"- patch accepted: `{case.patch_accepted_count}/{case.patch_attempts_count}`",
                     f"- rollback evidence: `{case.rollback_count}`",
                     f"- managed regeneration probe: `{case.managed_regen_success}`",
@@ -479,7 +583,7 @@ class AgentBenchmarkRunner:
                 f'<td><span class="badge {status}">{status}</span></td>'
                 f"<td>{case.tool_calls_count}</td>"
                 f"<td>{case.iterations}</td>"
-                f"<td>{case.rag_hits_count}</td>"
+                f"<td><code>{escape(case.rag_mode)}</code><br>{case.rag_hits_count} hits<br>{case.rag_citations_count} citations</td>"
                 f"<td>{case.patch_accepted_count}/{case.patch_attempts_count}</td>"
                 f"<td><code>{escape(case.agent_run_json_path or '')}</code></td>"
                 "</tr>"
@@ -537,6 +641,12 @@ class AgentBenchmarkRunner:
             "patch_accept_rate",
             "rollback_count",
             "rag_hit_rate",
+            "rag_citation_coverage_rate",
+            "rag_success_delta",
+            "rag_on_success_rate",
+            "rag_off_success_rate",
+            "rag_iteration_delta",
+            "rag_tool_call_delta",
             "failed_cases_count",
             "trace_paths_count",
         ]
@@ -1035,6 +1145,9 @@ def agent_benchmark_metrics(cases: list[AgentBenchmarkCaseResult]) -> dict[str, 
     patch_attempts = sum(case.patch_attempts_count for case in cases)
     patch_accepted = sum(case.patch_accepted_count for case in cases)
     trace_paths = _unique_strings(path for case in cases for path in case.trace_paths)
+    rag_on = [case for case in cases if case.rag_mode == "on"]
+    rag_off = [case for case in cases if case.rag_mode == "off"]
+    rag_citation_coverages = [case.rag_citation_coverage for case in cases if case.patch_attempts_count > 0]
     failed_cases = [
         {
             "id": case.identifier,
@@ -1046,7 +1159,7 @@ def agent_benchmark_metrics(cases: list[AgentBenchmarkCaseResult]) -> dict[str, 
         for case in cases
         if not case.success
     ]
-    return {
+    metrics = {
         "cases_total": total,
         "success_count": successes,
         "success_rate": _rate(successes, total),
@@ -1056,6 +1169,9 @@ def agent_benchmark_metrics(cases: list[AgentBenchmarkCaseResult]) -> dict[str, 
         "avg_tool_calls": round(sum(case.tool_calls_count for case in tool_cases) / len(tool_cases), 2) if tool_cases else 0,
         "avg_iterations": round(sum(case.iterations for case in iteration_cases) / len(iteration_cases), 2) if iteration_cases else 0,
         "rag_hit_rate": _rate(sum(1 for case in cases if case.rag_hits_count > 0), total),
+        "rag_decisions_count": sum(case.rag_decisions_count for case in cases),
+        "rag_citations_count": sum(case.rag_citations_count for case in cases),
+        "rag_citation_coverage_rate": round(sum(rag_citation_coverages) / len(rag_citation_coverages), 4) if rag_citation_coverages else 0.0,
         "patch_accept_rate": _rate(patch_accepted, patch_attempts),
         "patch_attempts_count": patch_attempts,
         "patch_accepted_count": patch_accepted,
@@ -1065,6 +1181,31 @@ def agent_benchmark_metrics(cases: list[AgentBenchmarkCaseResult]) -> dict[str, 
         "trace_paths": trace_paths,
         "trace_paths_count": len(trace_paths),
     }
+    if rag_on or rag_off:
+        rag_on_success = _rate(sum(1 for case in rag_on if case.success), len(rag_on))
+        rag_off_success = _rate(sum(1 for case in rag_off if case.success), len(rag_off))
+        rag_on_audit = _rate(sum(1 for case in rag_on if case.audit_success is True), len([case for case in rag_on if case.audit_attempted]))
+        rag_off_audit = _rate(sum(1 for case in rag_off if case.audit_success is True), len([case for case in rag_off if case.audit_attempted]))
+        rag_on_iterations = _avg([case.iterations for case in rag_on if case.iterations > 0])
+        rag_off_iterations = _avg([case.iterations for case in rag_off if case.iterations > 0])
+        rag_on_tools = _avg([case.tool_calls_count for case in rag_on if case.tool_calls_count > 0])
+        rag_off_tools = _avg([case.tool_calls_count for case in rag_off if case.tool_calls_count > 0])
+        metrics.update(
+            {
+                "rag_on_success_rate": rag_on_success,
+                "rag_off_success_rate": rag_off_success,
+                "rag_on_audit_success_rate": rag_on_audit,
+                "rag_off_audit_success_rate": rag_off_audit,
+                "rag_on_avg_iterations": rag_on_iterations,
+                "rag_off_avg_iterations": rag_off_iterations,
+                "rag_on_avg_tool_calls": rag_on_tools,
+                "rag_off_avg_tool_calls": rag_off_tools,
+                "rag_success_delta": round(rag_on_success - rag_off_success, 4),
+                "rag_iteration_delta": round(rag_off_iterations - rag_on_iterations, 4),
+                "rag_tool_call_delta": round(rag_off_tools - rag_on_tools, 4),
+            }
+        )
+    return metrics
 
 
 def _agent_benchmark_case_from_run(
@@ -1089,6 +1230,13 @@ def _agent_benchmark_case_from_run(
     patch_attempts = 0
     patch_accepted = 0
     rag_hits_from_trace = 0
+    rag_decision_path = run.workspace / ".agent" / "rag-decision-trace.json" if run.workspace else None
+    rag_decisions = _load_json_list(rag_decision_path)
+    rag_citation_ids = _unique_strings(
+        citation
+        for decision in rag_decisions
+        for citation in (decision.get("citations") or [])
+    )
     for entry in tool_trace:
         if entry.get("action") == "apply_structured_patch":
             patch_attempts += 1
@@ -1107,6 +1255,7 @@ def _agent_benchmark_case_from_run(
             str(run.tool_call_trace_json_path) if run.tool_call_trace_json_path else "",
             str(run.reviewer_report_json_path) if run.reviewer_report_json_path else "",
             str(run.prompt_trace_json_path) if run.prompt_trace_json_path else "",
+            str(rag_decision_path) if rag_decision_path and rag_decision_path.exists() else "",
         ]
         if path
     )
@@ -1153,6 +1302,11 @@ def _agent_benchmark_case_from_run(
         rollback_evidence_paths=rollback_paths,
         reviewer_decision=str(reviewer_report.get("decision") or reviewer_payload.get("decision") or ""),
         reviewer_coverage_status=str(reviewer_report.get("coverage_status") or reviewer_payload.get("coverage_status") or ""),
+        rag_mode=case.rag_mode or "auto",
+        rag_decision_trace_json_path=str(rag_decision_path) if rag_decision_path and rag_decision_path.exists() else None,
+        rag_decisions_count=len(rag_decisions),
+        rag_citations_count=len(rag_citation_ids),
+        rag_citation_coverage=citation_coverage(tool_trace),
         trace_paths=trace_paths,
         errors=errors,
     )
@@ -1175,7 +1329,54 @@ def _inject_agent_benchmark_breakage(workspace: Path, breakage: str) -> None:
         if target.exists():
             target.unlink()
         return
+    if breakage == "break_pack_mcmeta":
+        target = workspace / "src" / "main" / "resources" / "pack.mcmeta"
+        text = target.read_text(encoding="utf-8")
+        target.write_text(text.replace('"pack_format": 61', '"pack_format": "BROKEN"'), encoding="utf-8")
+        return
+    if breakage == "break_recipe_json":
+        recipe = next((workspace / "src" / "main" / "resources" / "data").glob("*/recipe/*.json"), None)
+        if recipe is None:
+            raise ValueError("No generated recipe JSON was available for break_recipe_json.")
+        text = recipe.read_text(encoding="utf-8")
+        changed = False
+        for candidate in ("ruby_mod:ruby", "ruby_mod:ruby_sword", "ruby_mod:ruby_block"):
+            if candidate in text:
+                text = text.replace(candidate, "ruby_mod:missing_agentic_rag_material", 1)
+                changed = True
+                break
+        if not changed:
+            raise ValueError(f"Could not find a local recipe reference to break in {recipe}.")
+        recipe.write_text(text, encoding="utf-8")
+        return
     raise ValueError(f"Unsupported agent benchmark breakage: {breakage}")
+
+
+def _paired_rag_ablation_cases(cases: list[AgentBenchmarkCaseSpec]) -> list[AgentBenchmarkCaseSpec]:
+    paired: list[AgentBenchmarkCaseSpec] = []
+    for case in cases:
+        for mode in ("on", "off"):
+            paired.append(
+                AgentBenchmarkCaseSpec(
+                    identifier=f"{case.identifier}_rag_{mode}",
+                    mode=case.mode,
+                    request=case.request,
+                    setup_request=case.setup_request,
+                    breakage=case.breakage,
+                    max_iterations=case.max_iterations,
+                    rag_mode=mode,
+                )
+            )
+    return paired
+
+
+def _agent_benchmark_success(cases: list[AgentBenchmarkCaseResult], *, rag_ablation: bool) -> bool:
+    if not cases:
+        return False
+    if not rag_ablation:
+        return all(case.success for case in cases)
+    rag_on = [case for case in cases if case.rag_mode == "on"]
+    return bool(rag_on) and all(case.success for case in rag_on)
 
 
 def _rollback_evidence_paths(workspace: Path | None, repair_payload: dict[str, Any]) -> list[str]:
@@ -1255,6 +1456,10 @@ def _provider_kind(provider: str) -> str:
 
 def _rate(count: int, total: int) -> float:
     return float(count / total) if total else 0.0
+
+
+def _avg(values: list[int] | list[float]) -> float:
+    return round(sum(values) / len(values), 2) if values else 0.0
 
 
 def _format_value(value: Any) -> str:

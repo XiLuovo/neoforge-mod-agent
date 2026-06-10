@@ -80,6 +80,13 @@ class ToolCallingAgentTests(unittest.TestCase):
             )
             self.assertTrue(all(entry.get("source") == "llm" for entry in trace))
             self.assertTrue(all(entry.get("observation") for entry in trace))
+            retrieve_observation = trace[0]["observation"]
+            self.assertTrue(retrieve_observation["rag_decision_id"])
+            self.assertTrue(retrieve_observation["queries"])
+            self.assertTrue(retrieve_observation["citations"])
+            self.assertEqual(retrieve_observation["sufficiency"], "sufficient")
+            patch_observation = trace[2]["observation"]
+            self.assertEqual(patch_observation["citation_ids"], ["pack.mcmeta"])
 
             repair_payload = result.payload["repair"]
             self.assertTrue(repair_payload["repair_needed"])
@@ -92,10 +99,16 @@ class ToolCallingAgentTests(unittest.TestCase):
             snapshots = list((setup.workspace / ".agent" / "structured-patch-snapshots").rglob("pack.mcmeta"))
             self.assertTrue(snapshots)
             self.assertTrue((setup.workspace / ".agent" / "repair-rag-context.json").exists())
+            rag_trace_path = setup.workspace / ".agent" / "rag-decision-trace.json"
+            self.assertTrue(rag_trace_path.exists())
+            rag_trace = json.loads(rag_trace_path.read_text(encoding="utf-8"))
+            self.assertTrue(rag_trace[0]["used_by_patch"])
+            self.assertEqual(rag_trace[0]["patch_citation_ids"], ["pack.mcmeta"])
             reviewer_report = json.loads((setup.workspace / ".agent" / "reviewer-report.json").read_text(encoding="utf-8"))
             self.assertEqual(reviewer_report["source"], "llm_reviewer")
             self.assertEqual(reviewer_report["decision"], "approve")
             self.assertEqual(reviewer_report["coverage_status"], "pass")
+            self.assertEqual(reviewer_report["evidence_sufficiency"], "sufficient")
             self.assertEqual(result.payload["repair"]["reviewer"]["source"], "llm_reviewer")
             self.assertTrue(any(trace.role == "reviewer_agent" for trace in result.prompt_traces))
             self.assertGreaterEqual(len(result.prompt_traces), 6)

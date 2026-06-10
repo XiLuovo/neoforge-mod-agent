@@ -75,6 +75,41 @@ class LLMReviewerTests(unittest.TestCase):
         self.assertTrue(result.reviewer_report["recommended_checks"])
         self.assertEqual(result.prompt_trace.normalized_json["decision"], "needs_repair")
 
+    def test_sensitive_patch_without_evidence_requires_more_rag(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="llm-reviewer-", dir=TMP_ROOT) as tmp:
+            reviewer = LLMReviewer(test_config(Path(tmp)))
+            result = reviewer.review(
+                workspace=Path(tmp),
+                user_goal="Fix pack.mcmeta audit failures.",
+                llm_provider="mock",
+                review_stage="unit",
+                intent_contract={"requirements": ["Fix pack.mcmeta audit failures."]},
+                modspec={"mod_id": "ruby_mod", "features": [{"id": "ruby"}]},
+                rag={"hits": [], "citations": []},
+                tool_call_trace=[
+                    {
+                        "iteration": 1,
+                        "source": "llm",
+                        "action": "apply_structured_patch",
+                        "observation": {
+                            "success": True,
+                            "changed_files": ["src/main/resources/pack.mcmeta"],
+                            "citation_ids": [],
+                        },
+                    }
+                ],
+                changed_files=["src/main/resources/pack.mcmeta"],
+                audit_result={"attempted": True, "success": True, "summary": "Workspace audit passed."},
+                build_result={"attempted": False, "success": None, "summary": "Build skipped."},
+            )
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.decision, "needs_repair")
+        self.assertEqual(result.coverage_status, "partial")
+        self.assertEqual(result.reviewer_report["evidence_sufficiency"], "insufficient")
+        self.assertTrue(result.reviewer_report["requires_more_rag"])
+        self.assertTrue(result.reviewer_report["unsupported_citation_gaps"])
+
 
 if __name__ == "__main__":
     unittest.main()

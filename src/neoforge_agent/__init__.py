@@ -1,6 +1,7 @@
 from .asset_generator import AssetGenerator
 from .agent_models import AgentDecision, AgentPromptTrace, AgentRunResult, AgentStep
 from .agent_runtime import AgentRuntime, AgentRuntimePlugin, AgentRuntimeRequest, AgentRuntimeStageResult, AgentTraceWriter
+from .agentic_rag import AgenticRAGDecision, AgenticRAGPolicy, AgenticRAGRetriever, AgenticRAGTrace
 from .agent_orchestrator import AgentOrchestrator, NeoForgeRuntimePlugin
 from .auditor import AuditCheck, AuditIssue, AuditResult, WorkspaceAuditor, audit_workspace
 from .balance_generator import BalancePlanGenerator
@@ -100,6 +101,10 @@ __all__ = [
     "AgentRuntimePlugin",
     "AgentRuntimeRequest",
     "AgentRuntimeStageResult",
+    "AgenticRAGDecision",
+    "AgenticRAGPolicy",
+    "AgenticRAGRetriever",
+    "AgenticRAGTrace",
     "AgentBenchmarkCaseResult",
     "AgentBenchmarkCaseSpec",
     "AgentBenchmarkResult",
