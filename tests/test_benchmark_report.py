@@ -70,6 +70,77 @@ class BenchmarkReportTests(unittest.TestCase):
             reviewer = json.loads(Path(repair_case.reviewer_report_json_path).read_text(encoding="utf-8"))
             self.assertEqual(reviewer["source"], "llm_reviewer")
 
+    def test_agent_benchmark_reports_rag_ablation_metrics(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+
+            result = AgentBenchmarkRunner(config).run(
+                run_name="unit-agentic-rag-ablation",
+                cases_path=PROJECT_ROOT / "examples" / "agentic_rag_ablation.json",
+                eval_limit=0,
+                repair_limit=3,
+                llm_provider="mock",
+                run_build=False,
+                run_audit=True,
+                rag_ablation=True,
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.metrics["cases_total"], 6)
+            self.assertEqual(result.metrics["rag_on_success_rate"], 1.0)
+            self.assertLess(result.metrics["rag_off_success_rate"], 1.0)
+            self.assertGreater(result.metrics["rag_success_delta"], 0)
+            self.assertGreater(result.metrics["rag_citation_coverage_rate"], 0)
+            self.assertTrue(any(case.rag_mode == "on" for case in result.cases))
+            self.assertTrue(any(case.rag_mode == "off" for case in result.cases))
+            self.assertTrue(
+                any(
+                    case.rag_mode == "on" and case.rag_decision_trace_json_path
+                    for case in result.cases
+                )
+            )
+            self.assertTrue(
+                any(
+                    "rag-decision-trace.json" in trace_path
+                    for case in result.cases
+                    for trace_path in case.trace_paths
+                )
+            )
+            self.assertTrue(result.benchmark_report_json_path.exists())
+
+    def test_agent_benchmark_real_provider_preflight(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+            with patch.dict(os.environ, {}, clear=True):
+                with patch("neoforge_agent.llm_client._project_dotenv_values", return_value={}):
+                    skipped = AgentBenchmarkRunner(config).run(
+                        run_name="unit-agent-benchmark-skip-real",
+                        eval_limit=0,
+                        repair_limit=0,
+                        llm_provider="openai-compatible",
+                        run_build=False,
+                        run_audit=True,
+                        rag_ablation=True,
+                        require_real=False,
+                    )
+                    required = AgentBenchmarkRunner(config).run(
+                        run_name="unit-agent-benchmark-require-real",
+                        eval_limit=0,
+                        repair_limit=0,
+                        llm_provider="openai-compatible",
+                        run_build=False,
+                        run_audit=True,
+                        rag_ablation=True,
+                        require_real=True,
+                    )
+
+            self.assertTrue(skipped.success)
+            self.assertEqual(skipped.cases, [])
+            self.assertTrue(skipped.warnings)
+            self.assertFalse(required.success)
+            self.assertEqual(required.cases, [])
+            self.assertTrue(required.errors)
+
     def test_benchmark_report_aggregates_mock_models_failure_types_and_runtime_page(self) -> None:
         with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
             config = test_config(Path(tmp))

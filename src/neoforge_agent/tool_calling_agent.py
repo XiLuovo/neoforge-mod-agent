@@ -10,6 +10,13 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .agent_models import AgentPromptTrace
+from .agentic_rag import (
+    AgenticRAGPolicy,
+    AgenticRAGRetriever,
+    citation_coverage,
+    mark_latest_trace_used_by_patch,
+    write_rag_decision_trace,
+)
 from .auditor import WorkspaceAuditor
 from .builder import GradleBuilder
 from .config import AppConfig
@@ -32,6 +39,8 @@ Patch safety rules:
 - Paths must be relative to the workspace and inside allowed generated roots.
 - Never touch .git, build output, Gradle wrapper binaries, secrets, or binary files.
 - Prefer reading/searching/retrieving before patching.
+- If repair_action_hint is present, use it unless a recent observation proves it is wrong.
+- Do not repeat the same read_file/search_files action when the failing file and replacement are already known.
 - Before finish, make sure the requested audit/build gates have passed.
 
 Response schema:
@@ -104,6 +113,7 @@ class StructuredPatchChange:
     old: str | None = None
     new: str | None = None
     content: str | None = None
+    citation_ids: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "StructuredPatchChange":
@@ -117,6 +127,9 @@ class StructuredPatchChange:
             old=str(old) if old is not None else None,
             new=str(new) if new is not None else None,
             content=str(data["content"]) if data.get("content") is not None else None,
+            citation_ids=[str(item) for item in data.get("citation_ids", []) if str(item).strip()]
+            if isinstance(data.get("citation_ids"), list)
+            else [],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -131,6 +144,8 @@ class StructuredPatchChange:
             payload["new"] = self.new
         if self.content is not None:
             payload["content"] = self.content
+        if self.citation_ids:
+            payload["citation_ids"] = list(self.citation_ids)
         return payload
 
 
@@ -177,6 +192,7 @@ class ToolCallingRepairResult:
     trace: list[dict[str, Any]]
     prompt_traces: list[AgentPromptTrace] = field(default_factory=list)
     repair_rag: dict[str, Any] = field(default_factory=dict)
+    rag_decision_trace: list[dict[str, Any]] = field(default_factory=list)
     structured_patch: dict[str, Any] = field(default_factory=dict)
     repair_loop: dict[str, Any] = field(default_factory=dict)
     finished: bool = False
@@ -203,6 +219,7 @@ class ToolCallingRepairResult:
             "final_build": dict(self.final_build),
             "final_audit": dict(self.final_audit),
             "repair_rag": dict(self.repair_rag),
+            "rag_decision_trace": list(self.rag_decision_trace),
             "structured_patch": dict(self.structured_patch),
             "repair_loop": dict(self.repair_loop),
             "tool_call_trace": list(self.trace),
@@ -372,6 +389,8 @@ class ToolCallingRepairAgent:
         repair_runner: AutoRepairRunner | None = None,
         knowledge_base: NeoForgeKnowledgeBase | None = None,
         patch_applier: StructuredPatchApplier | None = None,
+        rag_policy: AgenticRAGPolicy | None = None,
+        rag_retriever: AgenticRAGRetriever | None = None,
     ) -> None:
         self.config = config or AppConfig.default()
         self.llm_client = llm_client
@@ -380,6 +399,8 @@ class ToolCallingRepairAgent:
         self.repair_runner = repair_runner or AutoRepairRunner(self.config)
         self.knowledge_base = knowledge_base or NeoForgeKnowledgeBase()
         self.patch_applier = patch_applier or StructuredPatchApplier(self.config)
+        self.rag_policy = rag_policy or AgenticRAGPolicy()
+        self.rag_retriever = rag_retriever or AgenticRAGRetriever(self.knowledge_base)
 
     def run(
         self,
@@ -396,6 +417,7 @@ class ToolCallingRepairAgent:
         repair_plan: list[dict[str, str]] | None = None,
         loop_purpose: str = "repair",
         extra_context: dict[str, Any] | None = None,
+        rag_mode: str = "auto",
     ) -> ToolCallingRepairResult:
         workspace = workspace.resolve()
         max_iterations = max(1, int(max_iterations or 1))
@@ -409,6 +431,7 @@ class ToolCallingRepairAgent:
             "current_audit": dict(initial_audit),
             "loop_purpose": str(loop_purpose or "repair"),
             "extra_context": dict(extra_context or {}),
+            "rag_mode": _normalize_rag_mode(rag_mode),
             "observations": [
                 {
                     "kind": "initial_observation",
@@ -422,6 +445,7 @@ class ToolCallingRepairAgent:
             "completed_actions": [],
             "repair_executed": False,
             "repair_rag": {},
+            "rag_decision_trace": [],
             "structured_patch": {},
             "repair_loop": {},
             "finished": False,
@@ -499,6 +523,15 @@ class ToolCallingRepairAgent:
                 state["finish_summary"] = str(observation.get("summary") or args.get("summary") or "")
                 break
 
+        if state["repair_executed"]:
+            self._run_final_requested_gates(
+                workspace,
+                run_build=run_build,
+                run_audit=run_audit,
+                state=state,
+                trace=trace,
+            )
+
         final_build = dict(state["current_build"])
         final_audit = dict(state["current_audit"])
         success = _requested_gates_pass(final_build, final_audit, run_build=run_build, run_audit=run_audit)
@@ -528,6 +561,7 @@ class ToolCallingRepairAgent:
             trace=trace,
             prompt_traces=prompt_traces,
             repair_rag=dict(state["repair_rag"]),
+            rag_decision_trace=list(state["rag_decision_trace"]),
             structured_patch=dict(state["structured_patch"]),
             repair_loop=dict(state["repair_loop"]),
             finished=bool(state["finished"]),
@@ -556,12 +590,24 @@ class ToolCallingRepairAgent:
             "run_build_enabled": run_build,
             "run_audit_enabled": run_audit,
             "extra_context": _compact_payload(state.get("extra_context", {})),
+            "rag_policy": {
+                "mode": state.get("rag_mode", "auto"),
+                "must_retrieve_when": [
+                    "audit/build failure",
+                    "unsupported request",
+                    "NeoForge API or registry uncertainty",
+                    "resource path or metadata uncertainty",
+                    "reviewer evidence insufficiency",
+                ],
+                "recent_decisions": _compact_payload(state.get("rag_decision_trace", [])[-4:]),
+            },
             "available_tools": tool_schemas(),
             "current_gates": {
                 "build": _compact_payload(state["current_build"]),
                 "audit": _compact_payload(state["current_audit"]),
             },
             "completed_actions": list(state["completed_actions"]),
+            "repair_action_hint": _repair_action_hint(workspace, state),
             "recent_observations": _compact_payload(state["observations"][-8:]),
         }
         text = json.dumps(payload, ensure_ascii=False, indent=2)
@@ -614,7 +660,7 @@ class ToolCallingRepairAgent:
         if action not in ALLOWED_REPAIR_ACTIONS:
             return {"success": False, "summary": f"Unsupported repair tool action: {action}", "warnings": []}
         if action == "retrieve_rag":
-            observation = self._retrieve_rag(workspace, args)
+            observation = self._retrieve_rag(workspace, args, state=state)
             state["repair_rag"] = observation
             return observation
         if action == "read_file":
@@ -642,7 +688,14 @@ class ToolCallingRepairAgent:
                 state["current_audit"] = last_attempt["audit"]
             return observation
         if action == "apply_structured_patch":
+            args = self._attach_patch_citations(args, state)
             result = self.patch_applier.apply(workspace, args)
+            citation_ids = _patch_citation_ids(args)
+            mark_latest_trace_used_by_patch(state["rag_decision_trace"], citation_ids)
+            write_rag_decision_trace(
+                ensure_directory(self.config.agent_dir_for(workspace)),
+                state["rag_decision_trace"],
+            )
             observation = {
                 "success": result.success,
                 "summary": (
@@ -651,9 +704,13 @@ class ToolCallingRepairAgent:
                     else "Structured patch failed."
                 ),
                 **result.to_dict(),
+                "citation_ids": citation_ids,
+                "citations": citation_ids,
+                "rag_required": bool(citation_ids),
             }
             state["repair_executed"] = state["repair_executed"] or result.success
             state["structured_patch"] = result.to_dict()
+            state["structured_patch"]["citation_ids"] = citation_ids
             return observation
         if action == "finish":
             requested_success = _requested_gates_pass(
@@ -672,33 +729,75 @@ class ToolCallingRepairAgent:
             }
         return {"success": False, "summary": f"Unhandled repair tool action: {action}"}
 
-    def _retrieve_rag(self, workspace: Path, args: dict[str, Any]) -> dict[str, Any]:
+    def _retrieve_rag(self, workspace: Path, args: dict[str, Any], *, state: dict[str, Any]) -> dict[str, Any]:
         query = str(args.get("query") or "repair audit build failure")
         limit = _coerce_limit(args.get("limit"), default=5)
-        hits = self.knowledge_base.query(query, limit=limit)
-        hit_dicts = [hit.to_dict() for hit in hits]
+        max_hops = _coerce_limit(args.get("max_hops"), default=2, maximum=3)
+        reason = str(args.get("reason") or "repair_agent_requested_rag")
+        decision = self.rag_policy.decide(
+            reason=reason,
+            query=query,
+            build=state.get("current_build", {}),
+            audit=state.get("current_audit", {}),
+            changed_files=_state_changed_files(state),
+            reviewer_observation=_reviewer_observation_from_state(state),
+            rag_mode=str(state.get("rag_mode", "auto")),
+            sequence=len(state.get("rag_decision_trace", [])) + 1,
+        )
+        rag_trace = self.rag_retriever.retrieve(decision=decision, limit=limit, max_hops=max_hops)
+        hit_dicts = list(rag_trace.hits)
         summary = summarize_knowledge_hits(hit_dicts)
         observation = {
-            "success": True,
-            "attempted": True,
+            "success": not decision.skipped,
+            "attempted": not decision.skipped,
             "summary": f"Retrieved {len(hit_dicts)} RAG snippet(s).",
-            "query": query,
+            "query": decision.query,
+            "original_query": query,
             "limit": limit,
+            "max_hops": max_hops,
+            "rag_decision_id": decision.decision_id,
+            "rag_required": decision.rag_required,
+            "would_require_rag": decision.would_require_rag,
+            "rag_skipped": decision.skipped,
+            "reason": decision.reason,
+            "policy_triggers": list(decision.triggers),
+            "queries": list(rag_trace.queries),
+            "hops": list(rag_trace.hops),
+            "citations": list(rag_trace.citations),
+            "sufficiency": rag_trace.sufficiency,
             "hits": hit_dicts,
             "hits_count": len(hit_dicts),
             "query_expansions": expand_knowledge_query(query),
             "categories": summary["categories"],
             "capabilities": summary["capabilities"],
-            "context": self.knowledge_base.render_context(query, limit=limit),
+            "context": self.knowledge_base.render_context(decision.query, limit=limit) if not decision.skipped else "",
         }
         agent_dir = ensure_directory(self.config.agent_dir_for(workspace))
         report_json = agent_dir / "repair-rag-context.json"
         report_md = agent_dir / "repair-rag-context.md"
         observation["report_json_path"] = str(report_json)
         observation["report_md_path"] = str(report_md)
+        state["rag_decision_trace"].append(rag_trace.to_dict())
+        trace_path = write_rag_decision_trace(agent_dir, state["rag_decision_trace"])
+        observation["rag_decision_trace_json_path"] = str(trace_path)
         write_json(report_json, observation)
         write_text(report_md, render_rag_markdown(observation))
         return observation
+
+    def _attach_patch_citations(self, args: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(args)
+        changes = payload.get("changes") if isinstance(payload.get("changes"), list) else []
+        latest = _latest_rag_citations(state.get("rag_decision_trace", []))
+        patched_changes: list[dict[str, Any]] = []
+        for item in changes:
+            if not isinstance(item, dict):
+                continue
+            change = dict(item)
+            if not change.get("citation_ids") and latest:
+                change["citation_ids"] = list(latest)
+            patched_changes.append(change)
+        payload["changes"] = patched_changes
+        return payload
 
     def _read_file(self, workspace: Path, args: dict[str, Any]) -> dict[str, Any]:
         raw_path = str(args.get("path", "")).strip()
@@ -830,6 +929,36 @@ class ToolCallingRepairAgent:
         lines.append("")
         write_text(agent_dir / "agent-repair-plan.md", "\n".join(lines))
 
+    def _run_final_requested_gates(
+        self,
+        workspace: Path,
+        *,
+        run_build: bool,
+        run_audit: bool,
+        state: dict[str, Any],
+        trace: list[dict[str, Any]],
+    ) -> None:
+        if run_audit and not _gate_success(state["current_audit"]):
+            observation = self._run_audit(workspace, enabled=True)
+            state["current_audit"] = observation
+            _append_executor_observation(
+                trace,
+                state,
+                action="run_audit",
+                observation=observation,
+                summary="Executor ran final audit after repair actions.",
+            )
+        if run_build and not _gate_success(state["current_build"]):
+            observation = self._run_build(workspace, enabled=True)
+            state["current_build"] = observation
+            _append_executor_observation(
+                trace,
+                state,
+                action="run_build",
+                observation=observation,
+                summary="Executor ran final build after repair actions.",
+            )
+
 
 def normalize_tool_action(raw: dict[str, Any] | None) -> tuple[dict[str, Any], list[str]]:
     warnings: list[str] = []
@@ -855,7 +984,14 @@ def normalize_tool_action(raw: dict[str, Any] | None) -> tuple[dict[str, Any], l
 
 def tool_schemas() -> dict[str, Any]:
     return {
-        "retrieve_rag": {"args": {"query": "string", "limit": "integer optional"}},
+        "retrieve_rag": {
+            "args": {
+                "reason": "why retrieval is required",
+                "query": "string",
+                "limit": "integer optional",
+                "max_hops": "integer optional, default 2, max 3",
+            }
+        },
         "read_file": {"args": {"path": "workspace-relative text file path"}},
         "search_files": {"args": {"query": "string", "glob": "optional glob", "limit": "integer optional"}},
         "regenerate_managed_files": {"args": {}},
@@ -869,6 +1005,7 @@ def tool_schemas() -> dict[str, Any]:
                         "new": "required for replace_text",
                         "content": "required for write_file",
                         "reason": "short reason",
+                        "citation_ids": "optional list of RAG citation ids",
                     }
                 ]
             }
@@ -997,6 +1134,11 @@ def render_rag_markdown(observation: dict[str, Any]) -> str:
         "# Repair RAG Context",
         "",
         f"Query: `{observation.get('query', '')}`",
+        f"Reason: `{observation.get('reason', '')}`",
+        f"Required: `{str(observation.get('rag_required', False)).lower()}`",
+        f"Sufficiency: `{observation.get('sufficiency', '')}`",
+        f"Queries: `{', '.join(observation.get('queries') or [])}`",
+        f"Citations: `{', '.join(observation.get('citations') or [])}`",
         f"Hits: `{observation.get('hits_count', 0)}`",
         "",
         "## Hits",
@@ -1058,6 +1200,172 @@ def _gate_failed(payload: dict[str, Any]) -> bool:
     return bool(payload.get("attempted") and payload.get("success") is False)
 
 
+def _gate_success(payload: dict[str, Any]) -> bool:
+    return bool(payload.get("attempted") and payload.get("success") is True)
+
+
+def _append_executor_observation(
+    trace: list[dict[str, Any]],
+    state: dict[str, Any],
+    *,
+    action: str,
+    observation: dict[str, Any],
+    summary: str,
+) -> None:
+    entry = {
+        "iteration": len(trace) + 1,
+        "role": "repair_agent",
+        "source": "executor",
+        "provider": "deterministic",
+        "model": "",
+        "thought_summary": summary,
+        "action": action,
+        "args": {},
+        "observation": _compact_payload(observation),
+        "completion": None,
+    }
+    trace.append(entry)
+    state["completed_actions"].append(action)
+    state["observations"].append(
+        {
+            "kind": "tool_observation",
+            "iteration": entry["iteration"],
+            "tool_action": action,
+            "summary": observation.get("summary", ""),
+            "observation": observation,
+        }
+    )
+
+
+def _normalize_rag_mode(value: str) -> str:
+    normalized = str(value or "auto").strip().lower()
+    return normalized if normalized in {"auto", "on", "off"} else "auto"
+
+
+def _patch_citation_ids(args: dict[str, Any]) -> list[str]:
+    citations: list[str] = []
+    changes = args.get("changes") if isinstance(args.get("changes"), list) else []
+    for item in changes:
+        if not isinstance(item, dict):
+            continue
+        for citation in item.get("citation_ids", []) if isinstance(item.get("citation_ids"), list) else []:
+            text = str(citation).strip()
+            if text and text not in citations:
+                citations.append(text)
+    return citations
+
+
+def _latest_rag_citations(traces: list[dict[str, Any]]) -> list[str]:
+    for item in reversed(traces):
+        citations = item.get("citations")
+        if isinstance(citations, list) and citations:
+            return [str(citation) for citation in citations if str(citation).strip()]
+    return []
+
+
+def _state_changed_files(state: dict[str, Any]) -> list[str]:
+    structured = state.get("structured_patch")
+    if isinstance(structured, dict):
+        changed = structured.get("changed_files")
+        if isinstance(changed, list):
+            return [str(item) for item in changed]
+    return []
+
+
+def _reviewer_observation_from_state(state: dict[str, Any]) -> dict[str, Any]:
+    extra = state.get("extra_context")
+    if isinstance(extra, dict):
+        reviewer = extra.get("reviewer_observation")
+        if isinstance(reviewer, dict):
+            return reviewer
+        final = extra.get("final_reviewer")
+        if isinstance(final, dict):
+            return final
+    return {}
+
+
+def _repair_action_hint(workspace: Path, state: dict[str, Any]) -> dict[str, Any]:
+    actions = [str(item) for item in state.get("completed_actions", [])]
+    if "apply_structured_patch" in actions:
+        return {}
+    inspect_count = sum(1 for action in actions if action in {"read_file", "search_files"})
+    if inspect_count < 2:
+        return {}
+    audit = state.get("current_audit") if isinstance(state.get("current_audit"), dict) else {}
+    for error_item in audit.get("errors") if isinstance(audit.get("errors"), list) else []:
+        if not isinstance(error_item, dict):
+            continue
+        message = str(error_item.get("message") or "")
+        path_text = str(error_item.get("path") or "")
+        missing_match = re.search(r"Missing referenced id '([^']+)'", message)
+        if not missing_match or "/recipe/" not in path_text.replace("\\", "/"):
+            continue
+        missing_id = missing_match.group(1)
+        replacement = _replacement_id_for_missing_reference(workspace, missing_id)
+        relative_path = _relative_workspace_path(workspace, path_text)
+        if not replacement or not relative_path:
+            continue
+        citations = _latest_rag_citations(state.get("rag_decision_trace", []))
+        preferred_citation = "data.recipes_loot_tags" if "data.recipes_loot_tags" in citations else (citations[0] if citations else "")
+        change: dict[str, Any] = {
+            "operation": "replace_text",
+            "path": relative_path,
+            "old": missing_id,
+            "new": replacement,
+            "reason": "Audit identified a recipe JSON reference to a missing generated item id.",
+        }
+        if preferred_citation:
+            change["citation_ids"] = [preferred_citation]
+        return {
+            "action": "apply_structured_patch",
+            "why": "The audit error already identifies the recipe file and missing id; stop repeating reads/searches and patch the known reference.",
+            "args": {"changes": [change]},
+            "after_patch": "Run run_audit before finish.",
+        }
+    return {}
+
+
+def _replacement_id_for_missing_reference(workspace: Path, missing_id: str) -> str | None:
+    if ":" not in missing_id:
+        return None
+    namespace, broken_name = missing_id.split(":", 1)
+    modspec_path = workspace / ".agent" / "modspec.json"
+    try:
+        modspec = json.loads(modspec_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    candidates: list[str] = []
+    features = modspec.get("features") if isinstance(modspec.get("features"), list) else []
+    for feature in features:
+        if not isinstance(feature, dict):
+            continue
+        feature_id = str(feature.get("id") or feature.get("identifier") or "").strip()
+        feature_type = str(feature.get("type") or "").strip()
+        if feature_id and feature_type in {"item", "food", "ore", "block", "sword"}:
+            candidates.append(f"{namespace}:{feature_id}")
+    preferred_names = [
+        broken_name.replace("missing_agentic_rag_material", "ruby"),
+        broken_name.replace("missing_", ""),
+        "ruby",
+    ]
+    for name in preferred_names:
+        preferred = f"{namespace}:{name}"
+        if preferred in candidates:
+            return preferred
+    return candidates[0] if candidates else None
+
+
+def _relative_workspace_path(workspace: Path, path_text: str) -> str:
+    try:
+        return Path(path_text).resolve().relative_to(workspace.resolve()).as_posix()
+    except (OSError, ValueError):
+        normalized = path_text.replace("\\", "/")
+        marker = "/src/main/"
+        if marker in normalized:
+            return "src/main/" + normalized.split(marker, 1)[1]
+    return ""
+
+
 def _initial_observation_summary(build_payload: dict[str, Any], audit_payload: dict[str, Any]) -> str:
     parts: list[str] = []
     if build_payload.get("attempted"):
@@ -1107,6 +1415,21 @@ def _observation_prompt_summary(payload: dict[str, Any]) -> dict[str, Any]:
     }
     if observation:
         summary["success"] = observation.get("success")
+        if observation.get("path"):
+            summary["path"] = _compact_payload(observation.get("path"), max_string=800)
+        if observation.get("content"):
+            summary["content"] = _compact_payload(observation.get("content"), max_string=1600)
+        matches = observation.get("matches") if isinstance(observation.get("matches"), list) else []
+        if matches:
+            summary["matches"] = [
+                {
+                    "path": _compact_payload(match.get("path", ""), max_string=800),
+                    "line": match.get("line"),
+                    "preview": _compact_payload(match.get("preview", ""), max_string=400),
+                }
+                for match in matches[:5]
+                if isinstance(match, dict)
+            ]
         summary["errors"] = [
             _issue_prompt_summary(item)
             for item in (observation.get("errors") if isinstance(observation.get("errors"), list) else [])[:8]

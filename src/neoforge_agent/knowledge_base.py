@@ -334,6 +334,19 @@ def default_knowledge_entries() -> list[KnowledgeEntry]:
             ),
         ),
         KnowledgeEntry(
+            identifier="neoforge.mods_toml",
+            title="NeoForge metadata is declared in neoforge.mods.toml",
+            category="metadata",
+            capability="mod_metadata",
+            tags=["neoforge.mods.toml", "mods.toml", "mod metadata", "modloader", "loaderVersion", "displayName"],
+            summary="Generated NeoForge projects include a mods metadata template under src/main/templates/META-INF.",
+            content=(
+                "The generated NeoForge metadata file lives at src/main/templates/META-INF/neoforge.mods.toml. "
+                "A minimal generated metadata template includes modLoader, loaderVersion, license, [[mods]], modId, version, displayName, and description. "
+                "The modId must match the generated ModSpec id so Gradle resource expansion and audit checks can validate the workspace."
+            ),
+        ),
+        KnowledgeEntry(
             identifier="java.controlled_extension",
             title="V6.1 controlled Java extension is additive, sandboxed, and gated",
             category="java",

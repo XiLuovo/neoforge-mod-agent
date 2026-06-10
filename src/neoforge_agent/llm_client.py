@@ -1102,13 +1102,30 @@ class MockLLMClient:
         audit_gate = current_gates.get("audit", {}) if isinstance(current_gates, dict) else {}
         audit_success = audit_gate.get("success") if isinstance(audit_gate, dict) else None
         loop_purpose = str(prompt_payload.get("loop_purpose", "repair")) if isinstance(prompt_payload, dict) else "repair"
+        rag_policy = prompt_payload.get("rag_policy", {}) if isinstance(prompt_payload, dict) else {}
+        rag_mode = str(rag_policy.get("mode", "auto") if isinstance(rag_policy, dict) else "auto").lower()
+        rag_off = rag_mode == "off"
 
         if loop_purpose.startswith("develop"):
             if "retrieve_rag" not in completed_actions:
                 return {
                     "thought_summary": "Use NeoForge knowledge before refining the generated baseline workspace.",
                     "action": "retrieve_rag",
-                    "args": {"query": "pack.mcmeta generated resources develop refinement audit", "limit": 5},
+                    "args": {
+                        "reason": "develop_refinement_sensitive_resource",
+                        "query": "pack.mcmeta generated resources develop refinement audit",
+                        "limit": 5,
+                        "max_hops": 2,
+                    },
+                }
+            if rag_off:
+                return {
+                    "thought_summary": "RAG is disabled for this ablation run, so the mock agent refuses a sensitive resource refinement.",
+                    "action": "finish",
+                    "args": {
+                        "status": "failed",
+                        "summary": "RAG disabled; sensitive generated resource refinement was not patched.",
+                    },
                 }
             if "read_file" not in completed_actions:
                 return {
@@ -1131,6 +1148,7 @@ class MockLLMClient:
                                 "old": old,
                                 "new": f'"description": "{description} (develop refined)"',
                                 "reason": "Develop mode should refine the generated workspace through a constrained structured patch.",
+                                "citation_ids": ["pack.mcmeta"],
                             }
                         ]
                     },
@@ -1166,7 +1184,21 @@ class MockLLMClient:
                 return {
                     "thought_summary": "Regeneration could not restore the missing mods metadata template, so retrieve repair guidance before patching.",
                     "action": "retrieve_rag",
-                    "args": {"query": "neoforge mods.toml metadata missing generated template repair", "limit": 5},
+                    "args": {
+                        "reason": "missing neoforge.mods.toml",
+                        "query": "neoforge mods.toml metadata missing generated template repair",
+                        "limit": 5,
+                        "max_hops": 2,
+                    },
+                }
+            if rag_off:
+                return {
+                    "thought_summary": "RAG is disabled for this ablation run, so the mock agent stops before restoring sensitive NeoForge metadata.",
+                    "action": "finish",
+                    "args": {
+                        "status": "failed",
+                        "summary": "RAG disabled; missing neoforge.mods.toml was not patched.",
+                    },
                 }
             if "apply_structured_patch" not in completed_actions:
                 return {
@@ -1190,6 +1222,7 @@ class MockLLMClient:
                                     "'''\n"
                                 ),
                                 "reason": "Audit requires the generated NeoForge mods metadata template to exist.",
+                                "citation_ids": ["neoforge.mods_toml"],
                             }
                         ]
                     },
@@ -1206,11 +1239,99 @@ class MockLLMClient:
                 "args": {"status": "success", "summary": "Missing NeoForge metadata template restored and audited."},
             }
 
+        goal_text = str(prompt_payload.get("goal", "") if isinstance(prompt_payload, dict) else "").lower()
+        audit_text = json.dumps(audit_gate, ensure_ascii=False).lower() if isinstance(audit_gate, dict) else ""
+        recipe_failure = (
+            "missing_agentic_rag_material" in prompt
+            or "recipe/resource" in goal_text
+            or "recipe json" in goal_text
+            or ("recipe" in audit_text and ("data/" in audit_text or "missing_agentic_rag_material" in audit_text))
+        )
+        if recipe_failure:
+            if "retrieve_rag" not in completed_actions:
+                return {
+                    "thought_summary": "The failure touches data-pack recipe JSON, so retrieve recipe/resource path rules before patching.",
+                    "action": "retrieve_rag",
+                    "args": {
+                        "reason": "recipe json audit failure",
+                        "query": "recipe json audit failure missing local item resource path",
+                        "limit": 5,
+                        "max_hops": 2,
+                    },
+                }
+            if rag_off:
+                return {
+                    "thought_summary": "RAG is disabled for this ablation run, so the mock agent refuses to patch recipe JSON without citations.",
+                    "action": "finish",
+                    "args": {
+                        "status": "failed",
+                        "summary": "RAG disabled; recipe/resource path failure was not patched.",
+                    },
+                }
+            if "search_files" not in completed_actions and "read_file" not in completed_actions:
+                return {
+                    "thought_summary": "Locate the generated recipe JSON containing the broken resource reference.",
+                    "action": "search_files",
+                    "args": {
+                        "query": "missing_agentic_rag_material",
+                        "glob": "src/main/resources/data/**/*.json",
+                        "limit": 10,
+                    },
+                }
+            if "apply_structured_patch" not in completed_actions:
+                recipe_path = _recent_observation_match_path(
+                    prompt_payload,
+                    prefix="src/main/resources/data/",
+                    suffix=".json",
+                ) or "src/main/resources/data/ruby_mod/recipe/ruby_sword.json"
+                return {
+                    "thought_summary": "Patch the broken generated recipe reference back to the local ruby item id with citation support.",
+                    "action": "apply_structured_patch",
+                    "args": {
+                        "changes": [
+                            {
+                                "operation": "replace_text",
+                                "path": recipe_path,
+                                "old": "ruby_mod:missing_agentic_rag_material",
+                                "new": "ruby_mod:ruby",
+                                "reason": "Generated recipe JSON must reference an existing namespaced item id.",
+                                "citation_ids": ["data.recipes_loot_tags"],
+                            }
+                        ]
+                    },
+                }
+            if "run_audit" not in completed_actions:
+                return {
+                    "thought_summary": "After repairing the recipe JSON resource reference, rerun audit.",
+                    "action": "run_audit",
+                    "args": {},
+                }
+            return {
+                "thought_summary": "The recipe/resource path repair was verified by audit; finish the repair loop.",
+                "action": "finish",
+                "args": {"status": "success", "summary": "Recipe resource path repaired and audited."},
+            }
+
         if "retrieve_rag" not in completed_actions:
             return {
                 "thought_summary": "Use bundled NeoForge repair knowledge before editing files.",
                 "action": "retrieve_rag",
-                "args": {"query": "pack.mcmeta audit repair generated resources", "limit": 5},
+                "args": {
+                    "reason": "pack.mcmeta audit failure",
+                    "query": "pack.mcmeta audit repair generated resources",
+                    "limit": 5,
+                    "max_hops": 2,
+                },
+            }
+
+        if rag_off:
+            return {
+                "thought_summary": "RAG is disabled for this ablation run, so the mock agent stops before patching sensitive generated resources.",
+                "action": "finish",
+                "args": {
+                    "status": "failed",
+                    "summary": "RAG disabled; sensitive metadata/resource failure was not patched.",
+                },
             }
 
         if "pack.mcmeta" in prompt and "read_file" not in completed_actions:
@@ -1238,6 +1359,7 @@ class MockLLMClient:
                             "old": old,
                             "new": '"pack_format": 61',
                             "reason": "Audit requires pack.pack_format to be an integer.",
+                            "citation_ids": ["pack.mcmeta"],
                         }
                     ]
                 },
@@ -1286,6 +1408,9 @@ class MockLLMClient:
                 "unsupported_or_risky_requests": [],
                 "patch_risks": [],
                 "recommended_checks": ["Update ModSpec or planner handling for the missing feature, then rerun audit."],
+                "evidence_sufficiency": "sufficient",
+                "unsupported_citation_gaps": [],
+                "requires_more_rag": False,
                 "decision": "reject",
                 "confidence": 0.86,
             }
@@ -1297,6 +1422,9 @@ class MockLLMClient:
                 "unsupported_or_risky_requests": [],
                 "patch_risks": ["Structured patch changed generated resources; verify audit after reviewer-requested repair."],
                 "recommended_checks": ["Run one more tool-calling refinement loop with this reviewer observation."],
+                "evidence_sufficiency": "insufficient",
+                "unsupported_citation_gaps": ["Reviewer requested more RAG-backed evidence before approval."],
+                "requires_more_rag": True,
                 "decision": "needs_repair",
                 "confidence": 0.78,
             }
@@ -1308,6 +1436,9 @@ class MockLLMClient:
                 "unsupported_or_risky_requests": [],
                 "patch_risks": ["Reviewer approval cannot override failing audit/build gates."],
                 "recommended_checks": ["Repair gate failures before accepting the run."],
+                "evidence_sufficiency": "sufficient",
+                "unsupported_citation_gaps": [],
+                "requires_more_rag": False,
                 "decision": "needs_repair",
                 "confidence": 0.82,
             }
@@ -1324,6 +1455,9 @@ class MockLLMClient:
             "unsupported_or_risky_requests": [],
             "patch_risks": patch_risks,
             "recommended_checks": ["Keep deterministic audit/build as the final acceptance gate."],
+            "evidence_sufficiency": "sufficient",
+            "unsupported_citation_gaps": [],
+            "requires_more_rag": False,
             "decision": "approve" if stage != "baseline" else "approve",
             "confidence": 0.9,
         }
@@ -1525,6 +1659,36 @@ class MockLLMClient:
                 ],
             },
         }
+
+
+def _recent_observation_match_path(
+    prompt_payload: dict[str, Any],
+    *,
+    prefix: str,
+    suffix: str,
+) -> str | None:
+    observations = prompt_payload.get("recent_observations") if isinstance(prompt_payload, dict) else []
+    if not isinstance(observations, list):
+        return None
+    normalized_prefix = prefix.replace("\\", "/")
+    for entry in reversed(observations):
+        if not isinstance(entry, dict):
+            continue
+        candidates: list[Any] = []
+        observation = entry.get("observation") if isinstance(entry.get("observation"), dict) else {}
+        candidates.extend(observation.get("matches") if isinstance(observation.get("matches"), list) else [])
+        candidates.extend(entry.get("matches") if isinstance(entry.get("matches"), list) else [])
+        if observation.get("path"):
+            candidates.append({"path": observation.get("path")})
+        if entry.get("path"):
+            candidates.append({"path": entry.get("path")})
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            path = str(candidate.get("path") or "").replace("\\", "/").strip()
+            if path.startswith(normalized_prefix) and path.endswith(suffix):
+                return path
+    return None
 
 
 class OpenAICompatibleClient:
