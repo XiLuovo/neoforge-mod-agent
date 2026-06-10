@@ -188,7 +188,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     real_llm_stability_parser = subparsers.add_parser(
         "real-llm-stability",
-        help="Run strict real-provider cases and classify provider/schema/audit/build/fallback outcomes.",
+        help="Run strict real-provider cases and classify provider/schema/audit/build/runtime/fallback outcomes.",
     )
     real_llm_stability_parser.add_argument("--cases", help="Optional JSON file containing eval cases; only generate cases are used.")
     real_llm_stability_parser.add_argument("--run-name", help="Optional stable run folder name under workspace/real-llm-stability-runs/.")
@@ -206,6 +206,8 @@ def build_parser() -> argparse.ArgumentParser:
     real_llm_stability_audit_group.add_argument("--audit", dest="audit", action="store_true", help="Run workspace audit for each strict/fallback case.")
     real_llm_stability_audit_group.add_argument("--no-audit", dest="audit", action="store_false", help="Skip workspace audit for stability sampling.")
     real_llm_stability_parser.set_defaults(audit=True)
+    real_llm_stability_parser.add_argument("--runtime-evidence", help="Optional JSON or Markdown file with documented Minecraft runtime validation evidence.")
+    real_llm_stability_parser.add_argument("--require-runtime", action="store_true", help="Fail unless every strict case has passing runtime evidence.")
     real_llm_stability_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output.")
 
     benchmark_report_parser = subparsers.add_parser(
@@ -941,6 +943,8 @@ def _run_real_llm_stability_command(args: argparse.Namespace, config: AppConfig)
         run_audit=args.audit,
         fallback_probe=args.fallback_probe,
         require_real=args.require_real,
+        runtime_evidence_path=Path(args.runtime_evidence) if args.runtime_evidence else None,
+        require_runtime=args.require_runtime,
     )
     payload = result.to_dict()
     _print_payload(payload, as_json=args.json)
@@ -1591,6 +1595,8 @@ def _print_payload(payload: dict, *, as_json: bool) -> None:
         print(f"schema failures: {metrics.get('schema_failure_count', 0)}")
         print(f"audit failures: {metrics.get('audit_failure_count', 0)}")
         print(f"build failures: {metrics.get('build_failure_count', 0)}")
+        print(f"runtime failures: {metrics.get('runtime_failure_count', 0)}")
+        print(f"runtime unverified: {metrics.get('runtime_unverified_count', 0)}")
         print(f"fallback success: {metrics.get('fallback_success_count', 0)}")
         print(f"tokens: {metrics.get('total_tokens', 0)}")
         print(f"estimated cost USD: {metrics.get('estimated_cost_usd')}")

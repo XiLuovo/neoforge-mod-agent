@@ -15,6 +15,26 @@ from .tools import ensure_directory, write_json, write_text
 
 
 @dataclass(slots=True)
+class RealLLMRuntimeEvidenceCase:
+    identifier: str
+    workspace: str
+    status: str
+    passed: bool
+    source: str
+    notes: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.identifier,
+            "workspace": self.workspace,
+            "status": self.status,
+            "passed": self.passed,
+            "source": self.source,
+            "notes": self.notes,
+        }
+
+
+@dataclass(slots=True)
 class RealLLMStabilityCaseResult:
     identifier: str
     request: str
@@ -33,6 +53,11 @@ class RealLLMStabilityCaseResult:
     audit_success: bool | None = None
     build_attempted: bool = False
     build_success: bool | None = None
+    runtime_checked: bool = False
+    runtime_success: bool | None = None
+    runtime_status: str = "not_checked"
+    runtime_evidence_source: str | None = None
+    runtime_evidence_notes: str = ""
     retry_attempts: int = 0
     schema_retry_attempts: int = 0
     json_repair_applied: bool = False
@@ -67,6 +92,11 @@ class RealLLMStabilityCaseResult:
             "audit_success": self.audit_success,
             "build_attempted": self.build_attempted,
             "build_success": self.build_success,
+            "runtime_checked": self.runtime_checked,
+            "runtime_success": self.runtime_success,
+            "runtime_status": self.runtime_status,
+            "runtime_evidence_source": self.runtime_evidence_source,
+            "runtime_evidence_notes": self.runtime_evidence_notes,
             "retry_attempts": self.retry_attempts,
             "schema_retry_attempts": self.schema_retry_attempts,
             "json_repair_applied": self.json_repair_applied,
@@ -95,6 +125,9 @@ class RealLLMStabilityResult:
     run_build: bool
     run_audit: bool
     fallback_probe: bool
+    require_runtime: bool
+    runtime_evidence_path: str | None
+    runtime_evidence_cases: list[RealLLMRuntimeEvidenceCase]
     cases: list[RealLLMStabilityCaseResult]
     metrics: dict[str, Any]
     warnings: list[str]
@@ -113,6 +146,9 @@ class RealLLMStabilityResult:
             "run_build": self.run_build,
             "run_audit": self.run_audit,
             "fallback_probe": self.fallback_probe,
+            "require_runtime": self.require_runtime,
+            "runtime_evidence_path": self.runtime_evidence_path,
+            "runtime_evidence_cases": [case.to_dict() for case in self.runtime_evidence_cases],
             "cases": [case.to_dict() for case in self.cases],
             "metrics": dict(self.metrics),
             "warnings": list(self.warnings),
@@ -139,6 +175,8 @@ class RealLLMStabilityRunner:
         run_audit: bool = True,
         fallback_probe: bool = True,
         require_real: bool = False,
+        runtime_evidence_path: Path | None = None,
+        require_runtime: bool = False,
     ) -> RealLLMStabilityResult:
         run_id = run_name or datetime.now().strftime("%Y%m%d-%H%M%S")
         root_dir = ensure_directory(self.config.workspace_root / "real-llm-stability-runs" / run_id)
@@ -151,9 +189,12 @@ class RealLLMStabilityRunner:
         cases = _load_generate_cases(cases_path)
         if limit is not None:
             cases = cases[: max(0, limit)]
+        runtime_evidence_cases = _load_runtime_evidence_cases(runtime_evidence_path)
 
         warnings: list[str] = []
         errors: list[str] = []
+        if runtime_evidence_path is not None and not runtime_evidence_path.exists():
+            warnings.append(f"Runtime evidence path was not found: {runtime_evidence_path}")
         if llm_provider != "mock" and not provider_config.get("valid"):
             message = (
                 f"Provider `{llm_provider}` is not configured; strict real LLM attempts will fail "
@@ -163,6 +204,11 @@ class RealLLMStabilityRunner:
                 errors.append(message)
             else:
                 warnings.append(message)
+        if require_runtime and not runtime_evidence_cases:
+            errors.append(
+                "Runtime evidence was required, but no runtime evidence cases were loaded. "
+                "Pass --runtime-evidence with documented manual or automated runtime results."
+            )
 
         orchestrator = AgentOrchestrator(scoped_config)
         results: list[RealLLMStabilityCaseResult] = []
@@ -176,6 +222,7 @@ class RealLLMStabilityRunner:
                     run_build=run_build,
                     run_audit=run_audit,
                     fallback_probe=fallback_probe,
+                    runtime_evidence_cases=runtime_evidence_cases,
                 )
             )
 
@@ -183,6 +230,8 @@ class RealLLMStabilityRunner:
         success = not errors
         if require_real:
             success = success and metrics["real_llm_success_count"] == metrics["total_cases"]
+        if require_runtime:
+            success = success and metrics["runtime_success_count"] == metrics["total_cases"]
 
         result = RealLLMStabilityResult(
             success=success,
@@ -194,6 +243,9 @@ class RealLLMStabilityRunner:
             run_build=run_build,
             run_audit=run_audit,
             fallback_probe=fallback_probe,
+            require_runtime=require_runtime,
+            runtime_evidence_path=str(runtime_evidence_path) if runtime_evidence_path else None,
+            runtime_evidence_cases=runtime_evidence_cases,
             cases=results,
             metrics=metrics,
             warnings=warnings,
@@ -215,6 +267,7 @@ class RealLLMStabilityRunner:
         run_build: bool,
         run_audit: bool,
         fallback_probe: bool,
+        runtime_evidence_cases: list[RealLLMRuntimeEvidenceCase],
     ) -> RealLLMStabilityCaseResult:
         workspace_name = f"{index:02d}-{case.identifier}-strict"
         try:
@@ -241,6 +294,7 @@ class RealLLMStabilityRunner:
             }
 
         result = _case_result_from_payload(case, strict_payload, llm_provider=llm_provider)
+        _attach_runtime_evidence(result, runtime_evidence_cases)
         if fallback_probe and not result.real_llm_success:
             fallback_payload = self._run_fallback_probe(
                 index,
@@ -306,6 +360,8 @@ class RealLLMStabilityRunner:
             f"Build enabled: `{result.run_build}`",
             f"Audit enabled: `{result.run_audit}`",
             f"Fallback probe: `{result.fallback_probe}`",
+            f"Runtime evidence: `{result.runtime_evidence_path or 'none'}`",
+            f"Require runtime: `{result.require_runtime}`",
             "",
             "## Metrics",
             "",
@@ -316,6 +372,10 @@ class RealLLMStabilityRunner:
             f"- schema failure: `{metrics.get('schema_failure_count')}`",
             f"- audit failure: `{metrics.get('audit_failure_count')}`",
             f"- build failure: `{metrics.get('build_failure_count')}`",
+            f"- runtime failure: `{metrics.get('runtime_failure_count')}`",
+            f"- runtime checked: `{metrics.get('runtime_checked_count')}`",
+            f"- runtime success: `{metrics.get('runtime_success_count')}`",
+            f"- runtime unverified: `{metrics.get('runtime_unverified_count')}`",
             f"- fallback success: `{metrics.get('fallback_success_count')}`",
             f"- fallback failure: `{metrics.get('fallback_failure_count')}`",
             f"- JSON repair applied: `{metrics.get('json_repair_applied_count')}`",
@@ -334,6 +394,7 @@ class RealLLMStabilityRunner:
                 f" strict={str(case.strict_success).lower()}"
                 f" fallback={str(case.fallback_success).lower()}"
                 f" failure={case.failure_type or 'none'}"
+                f" runtime={case.runtime_status}"
             )
             if case.workspace:
                 lines.append(f"  - workspace: `{case.workspace}`")
@@ -341,6 +402,15 @@ class RealLLMStabilityRunner:
                 lines.append(f"  - fallback workspace: `{case.fallback_workspace}`")
             if case.errors:
                 lines.append(f"  - error: {case.errors[0]}")
+            if case.runtime_evidence_notes:
+                lines.append(f"  - runtime evidence: {case.runtime_evidence_notes}")
+        if result.runtime_evidence_cases:
+            lines.extend(["", "## Runtime Evidence Cases", ""])
+            for case in result.runtime_evidence_cases:
+                lines.append(
+                    f"- `{case.identifier}`: `{case.status}` "
+                    f"passed={str(case.passed).lower()} source=`{case.source}`"
+                )
         if result.warnings:
             lines.extend(["", "## Warnings", ""])
             lines.extend(f"- {warning}" for warning in result.warnings)
@@ -352,7 +422,7 @@ class RealLLMStabilityRunner:
                 "",
                 "## Interview Note",
                 "",
-                "Mock runs prove the deterministic engineering path. This report separates strict provider-backed success from provider/schema/gate failures and records fallback success without counting it as real LLM success.",
+                "Mock runs prove the deterministic engineering path. This report separates strict provider-backed success from provider/schema/audit/build/runtime failures and records fallback success without counting it as real LLM success.",
                 "",
             ]
         )
@@ -464,6 +534,133 @@ def _failure_type(payload: dict[str, Any]) -> str | None:
     return "agent_failure"
 
 
+def _load_runtime_evidence_cases(runtime_evidence_path: Path | None) -> list[RealLLMRuntimeEvidenceCase]:
+    if runtime_evidence_path is None or not runtime_evidence_path.exists():
+        return []
+    text = runtime_evidence_path.read_text(encoding="utf-8")
+    if runtime_evidence_path.suffix.lower() == ".json":
+        data = json.loads(text)
+        if isinstance(data, dict):
+            data = data.get("runtime_evidence_cases", data.get("runtime_cases", data.get("cases", [])))
+        if not isinstance(data, list):
+            raise ValueError("Runtime evidence JSON must contain a list or an object with a runtime evidence list.")
+        return [
+            _runtime_evidence_case_from_dict(item, source=str(runtime_evidence_path))
+            for item in data
+            if isinstance(item, dict)
+        ]
+    return _runtime_evidence_cases_from_markdown(text, source=str(runtime_evidence_path))
+
+
+def _runtime_evidence_case_from_dict(data: dict[str, Any], *, source: str) -> RealLLMRuntimeEvidenceCase:
+    status = str(data.get("status", data.get("result", "")))
+    passed_value = data.get("passed", data.get("success"))
+    passed = _runtime_status_passed(status) if passed_value is None else bool(passed_value)
+    return RealLLMRuntimeEvidenceCase(
+        identifier=str(data.get("id", data.get("identifier", data.get("case", "runtime_case")))),
+        workspace=str(data.get("workspace", "")),
+        status=status or ("passed" if passed else "failed"),
+        passed=passed,
+        source=str(data.get("source") or source),
+        notes=str(data.get("notes", data.get("manual_runtime_checks", ""))),
+    )
+
+
+def _runtime_evidence_cases_from_markdown(text: str, *, source: str) -> list[RealLLMRuntimeEvidenceCase]:
+    cases: list[RealLLMRuntimeEvidenceCase] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|") or "---" in stripped:
+            continue
+        columns = [column.strip() for column in stripped.strip("|").split("|")]
+        if len(columns) < 4 or columns[0].lower() in {"case", "id", "identifier"}:
+            continue
+        case_name, workspace, status, notes = columns[:4]
+        if not case_name:
+            continue
+        cases.append(
+            RealLLMRuntimeEvidenceCase(
+                identifier=case_name,
+                workspace=workspace.strip("`"),
+                status=status,
+                passed=_runtime_status_passed(status),
+                source=source,
+                notes=notes,
+            )
+        )
+    return cases
+
+
+def _runtime_status_passed(status: str) -> bool:
+    normalized = status.strip().lower()
+    if not normalized:
+        return False
+    if "未通过" in normalized or "not pass" in normalized or "failed" in normalized or "fail" in normalized:
+        return False
+    return "通过" in normalized or "passed" in normalized or "pass" in normalized or "success" in normalized
+
+
+def _attach_runtime_evidence(
+    result: RealLLMStabilityCaseResult,
+    runtime_evidence_cases: list[RealLLMRuntimeEvidenceCase],
+) -> None:
+    if not result.strict_success or not result.workspace:
+        return
+    evidence = _match_runtime_evidence(result, runtime_evidence_cases)
+    if evidence is None:
+        return
+    result.runtime_checked = True
+    result.runtime_success = evidence.passed
+    result.runtime_status = "runtime_passed" if evidence.passed else "runtime_failure"
+    result.runtime_evidence_source = evidence.source
+    result.runtime_evidence_notes = evidence.notes
+    if not evidence.passed:
+        result.failure_type = "runtime_failure"
+        result.outcome = "runtime_failure"
+        result.real_llm_success = False
+
+
+def _match_runtime_evidence(
+    result: RealLLMStabilityCaseResult,
+    runtime_evidence_cases: list[RealLLMRuntimeEvidenceCase],
+) -> RealLLMRuntimeEvidenceCase | None:
+    result_key = _normalized_runtime_key(result.identifier)
+    result_tokens = _runtime_tokens(result.identifier)
+    workspace_text = str(result.workspace or "").lower().replace("\\", "/")
+    for evidence in runtime_evidence_cases:
+        evidence_key = _normalized_runtime_key(evidence.identifier)
+        if evidence_key == result_key:
+            return evidence
+        evidence_tokens = _runtime_tokens(evidence.identifier)
+        if result_tokens and result_tokens == evidence_tokens:
+            return evidence
+        if result_tokens and evidence_tokens:
+            result_token_set = set(result_tokens)
+            evidence_token_set = set(evidence_tokens)
+            if evidence_token_set.issubset(result_token_set) or result_token_set.issubset(evidence_token_set):
+                return evidence
+        evidence_workspace = evidence.workspace.lower().replace("\\", "/")
+        if evidence_workspace and workspace_text and evidence_workspace in workspace_text:
+            return evidence
+    return None
+
+
+def _normalized_runtime_key(value: str) -> str:
+    return "_".join(_runtime_tokens(value))
+
+
+def _runtime_tokens(value: str) -> list[str]:
+    normalized = "".join(char.lower() if char.isalnum() else " " for char in value)
+    aliases = {
+        "basic": "basic",
+        "ruby": "ruby",
+        "machine": "machine",
+        "progression": "progression",
+    }
+    tokens = [aliases.get(token, token) for token in normalized.split() if token]
+    return sorted(tokens)
+
+
 def _outcome_from_failure(failure_type: str | None) -> str:
     if failure_type is None:
         return "strict_success"
@@ -545,7 +742,11 @@ def _compute_metrics(results: list[RealLLMStabilityCaseResult]) -> dict[str, Any
         "schema_failure_count": _failure_count(results, "schema_failure"),
         "audit_failure_count": _failure_count(results, "audit_failure"),
         "build_failure_count": _failure_count(results, "build_failure"),
+        "runtime_failure_count": _failure_count(results, "runtime_failure"),
         "agent_failure_count": _failure_count(results, "agent_failure"),
+        "runtime_checked_count": sum(1 for result in results if result.runtime_checked),
+        "runtime_success_count": sum(1 for result in results if result.runtime_success is True),
+        "runtime_unverified_count": sum(1 for result in results if not result.runtime_checked),
         "json_repair_applied_count": sum(1 for result in results if result.json_repair_applied),
         "retry_attempts_total": sum(result.retry_attempts for result in results),
         "schema_retry_attempts_total": sum(result.schema_retry_attempts for result in results),
