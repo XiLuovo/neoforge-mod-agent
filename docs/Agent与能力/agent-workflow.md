@@ -1,203 +1,96 @@
-# Agent Runtime / Workflow
+# RC1 Agent Workflow
 
-> 文档定位：这是 Agent workflow 真相源。planner、reviewer、executor、auditor、repair、trace 的阶段和证据文件以本文为准。
+> 这是当前 Agent 工作流真相源。旧版生成、Direct Code Lane 和 Free-Code Lab 只作为兼容或辅助能力存在；RC1 推荐主线是 `agent develop`、`agent repair` 和 `agent bench`。
 
-## V8.5 Capability Harvest Loop
-
-V8.5 adds an experimental learning loop around the stable agent workflow:
-
-```text
-generate gap
-  -> Free-Code Lab copied workspace
-  -> structured experimental code plan
-  -> safety review + apply
-  -> audit / build / manual runtime checklist
-  -> harvest candidate
-  -> later ModSpec / DSL / generator / audit / repair / test upgrade
-```
-
-`agent lab-generate` is deliberately outside the production `agent generate` acceptance path. It copies an existing generated workspace into `workspace/free-code-lab-runs/<run-id>/workspace`, applies structured experimental patches there, and writes evidence under that run's `.agent/` directory:
-
-```text
-.agent/free-code-plan.json
-.agent/free-code-plan.md
-.agent/free-code-diff.md
-.agent/free-code-report.json
-.agent/manual-runtime-checklist.md
-.agent/harvest-candidate.json
-```
-
-The matching `harvest-report` command aggregates lab candidates into `workspace/harvest-runs/<run-id>/.agent/harvest-report.json` and `.md`. It does not merge code back into the generator; harvesting still requires a deliberate implementation step with examples, unit tests, audit tests, and generate smoke tests.
-
-This is the main difference between V8.4 and V8.5:
-
-- Direct Code Lane extends a single production agent run with reviewed workspace patches.
-- Free-Code Lab is an isolated experiment area for generate gaps.
-- Capability Harvest Loop is the process for turning successful lab patterns into stable deterministic generator capability.
-
-## V8.4 ModSpec-First + Direct Code Lane
-
-V8.4 upgrades the agent route from ModSpec-only to a ModSpec-first hybrid contract:
+## 主线流程
 
 ```text
 Natural language
-  -> ModSpec-first routing
-  -> deterministic NeoForge generation
-  -> optional structured Direct Code Patch
-  -> audit / build / repair / replay
+-> planner / ModSpec
+-> deterministic generator baseline
+-> real tool-calling repair/refine loop
+-> RAG / read files / structured patch / audit
+-> LLM reviewer
+-> audit/build gate
+-> trace-backed benchmark
+-> replayable evidence
 ```
 
-`agent generate` and `agent modify` now accept `--code-lane {hybrid,modspec,direct}`. The default `hybrid` lane still plans a `ModSpec` first, then enters Direct Code Lane only when the planner marks `requires_direct_code=true` or provides a `direct_code_plan`. `modspec` preserves the previous ModSpec-only behavior. `direct` creates or loads the generated workspace baseline, then applies a reviewed structured patch.
+## `agent develop`
 
-Direct Code Lane is intentionally narrow: LLM output is JSON with `write_file` or `replace_text` changes, never a free-form diff. The runtime records `direct_code_reviewer` and `direct_code_agent` evidence, writes rollback snapshots under `.agent/direct-code-snapshots/`, and accepts the run only after audit plus Gradle build pass.
+`agent develop` 用于从自然语言目标创建并完善一个 NeoForge workspace：
 
-## V8.3 DomainSpec Plugin Layer
+1. planner 把用户目标整理为 intent contract 和 `ModSpec`。
+2. deterministic generator 生成 baseline workspace。
+3. 初始 audit/build observation 进入 tool-calling loop。
+4. LLM 只能选择受控工具：`retrieve_rag`、`read_file`、`search_files`、`apply_structured_patch`、`run_audit`、`run_build`、`finish`。
+5. reviewer 审查覆盖、unsupported request、patch 风险和残余风险。
+6. 最终成功仍由 audit/build gate 决定。
 
-V8.3 adds a `DomainSpec` registry on top of the V8.1 runtime extraction. `ModSpec` is now the stable `minecraft.neoforge` domain spec, while `spring.api` and `unity.component` are registered as planned extension points:
+常用 smoke：
 
 ```powershell
-py -3.11 -m agent.cli domains --json
+py -3.11 -m agent.cli agent develop "Create a ruby mod with a ruby item, ruby block and ruby ore." --planner llm --llm-provider mock --workspace-name rc1-develop-demo --no-build --json
 ```
 
-## V8.1 Runtime Extraction
+## `agent repair`
 
-V8.1 splits the agent flow into a small domain-neutral runtime plus a NeoForge domain plugin:
-
-```text
-AgentRuntime
-  -> planner stage
-  -> reviewer stage
-  -> executor stage
-  -> auditor stage
-  -> repair stage
-  -> AgentTraceWriter
-
-NeoForgeRuntimePlugin
-  -> domain_spec_plugin: minecraft.neoforge / ModSpec
-  -> natural language / LLM / rules -> intent contract
-  -> deterministic NeoForge generation
-  -> optional Direct Code Lane
-  -> workspace audit
-  -> repair-loop from .agent/modspec.json
-  -> optional Free-Code Lab / harvest reporting outside production generate
-```
-
-`AgentRuntime` owns the workflow skeleton and trace persistence. `NeoForgeRuntimePlugin` owns the domain-specific behavior: planning a `ModSpec`, generating Java/JSON/PNG/resources, auditing NeoForge references, and running the safe repair loop. The plugin now also exposes `domain_spec_plugin`, so future domains can provide their own spec loader, schema, validator, generator, auditor, and repair rules.
-
-The visible CLI behavior is unchanged:
+`agent repair` 用于已有 workspace 的受控修复。它不让 LLM 自由写 diff，而是把 audit/build 失败、RAG、文件内容和 reviewer observation 交给同一个 tool-calling loop。
 
 ```powershell
-py -3.11 -m agent.cli agent generate "Create a ruby mod with ruby." --planner llm --llm-provider mock --workspace-name runtime-demo --overwrite --no-build --json
+py -3.11 -m agent.cli agent repair rc1-develop-demo --goal "Fix audit failures using safe structured patches." --planner llm --llm-provider mock --max-iterations 5 --no-build --audit --json
 ```
 
-The resulting `agent-run.json` now includes a runtime payload:
+## `agent bench`
 
-```json
-{
-  "payload": {
-    "runtime": {
-      "domain": "neoforge",
-      "domain_spec": {
-        "domain_id": "minecraft.neoforge",
-        "spec_type": "ModSpec",
-        "status": "stable"
-      },
-      "stages": ["planner", "reviewer", "executor", "auditor", "repair"]
-    }
-  }
-}
-```
+`agent bench` 运行真实 develop/repair/reviewer/tool-calling 流程，并从真实 trace 汇总：
 
-This is the first step toward making NeoForge one domain plugin instead of the whole agent runtime. Future domains can implement the same stage contract without reusing Minecraft-specific generators.
-
-# V2.0 Agent Workflow
-
-## V3.7 Repair Agent Execution
-
-V3.7 upgrades `repair_agent` from analysis-only to safe execution. If `auditor_agent` or the build step reports failure and repair is enabled, `repair_agent` automatically runs the deterministic repair loop once.
-
-The action is intentionally narrow:
-
-```text
-read .agent/modspec.json
-  -> regenerate managed files
-  -> rerun requested audit/build checks
-  -> attach repair-loop result to agent-run.json
-```
-
-If the repair loop succeeds, the final agent run can recover to `success=true`. If it fails, the run keeps the root causes, repair plan, and repair-loop attempts for follow-up.
-
-V2.0 upgrades the agent workflow from a lightweight step list into a traceable multi-role workflow.
-
-## Goal
-
-The project keeps the core boundary:
-
-```text
-natural language / LLM
-  -> ModSpec / Behavior DSL / patch plan / repair plan / direct-code plan
-  -> deterministic Java/JSON generation / controlled extension / reviewed workspace patch
-  -> audit/build/repair/replay
-  -> optional Free-Code Lab harvest loop for generate gaps
-```
-
-LLM output remains constrained to verifiable intermediate representations such as `ModSpec`, Behavior DSL, controlled Java extension specs, patch plans, repair plans, direct-code plans, and lab plans. The agent workflow records how each role made its decision, so the result is easier to debug, evaluate, and turn into stable generator upgrades.
-
-## Roles
-
-- `planner_agent`: converts the user request into an intent contract: ModSpec, Behavior DSL, controlled extension spec, patch plan, direct-code plan, repair plan, or modification patch.
-- `reviewer_agent`: validates the ModSpec before generation is trusted, and reviews Direct Code patch boundaries when that lane is used.
-- `executor`: runs deterministic generation, managed-file regeneration, or reviewed patch application over generated workspace files only.
-- `auditor_agent`: checks generated workspace structure against ModSpec and generation-summary.
-- `repair_agent`: classifies failed build or audit results and writes repair context when needed.
-- `context_loader`: used by `agent modify` to load the existing `.agent/modspec.json` truth source.
-- `free_code_lab`: copies a generated workspace into an isolated lab run, applies experimental structured patches, and writes harvest candidate evidence.
-
-## Artifacts
-
-Each successful workspace agent run writes:
-
-```text
-.agent/agent-run.json
-.agent/agent-run.md
-.agent/agent-decisions.md
-.agent/prompt-trace.json
-.agent/agent-run-replay.html
-.agent/direct-code-*.json
-.agent/free-code-*.json
-.agent/harvest-candidate.json
-```
-
-`agent-decisions.md` is the human-readable explanation of role decisions and rationales.
-
-`prompt-trace.json` records planner inputs, system prompt, raw LLM JSON when available, normalized ModSpec output, warnings, and errors. This is intended for debugging and replay, not for committing private prompts or secrets.
-
-`replay` can now render `.agent/agent-run.json` into a static `agent-run-replay.html` trace viewer with role timeline filters, decision details, LLM provider telemetry, RAG/repair evidence, and artifact links.
-
-## Commands
+- `success_rate`
+- `build_success_rate`
+- `audit_success_rate`
+- `repair_success_rate`
+- `avg_tool_calls`
+- `avg_iterations`
+- `rag_hit_rate`
+- `patch_accept_rate`
+- `rollback_count`
+- `failed_cases`
+- `trace_paths`
 
 ```powershell
-$env:PYTHONPATH = (Resolve-Path .\src)
-py -3.11 -m agent.cli agent generate "Create a ruby mod with a ruby charm item." --planner llm --llm-provider mock --workspace-name v20-agent-trace --overwrite --no-build --json
+py -3.11 -m agent.cli agent bench --llm-provider mock --eval-limit 1 --repair-limit 1 --no-build --audit --json
 ```
 
-```powershell
-py -3.11 -m agent.cli agent modify workspace\v20-agent-trace "Add ruby ore that generates underground in the overworld, Y -64 to 32, vein size 6, 4 per chunk." --planner llm --llm-provider mock --no-build --json
-```
+## 证据文件
 
-## 中文说明
-
-V2.0 的重点不是让 LLM 直接写 Java，而是让 LLM 和多个确定性角色协作完成开发闭环：
+一次 RC1 agent run 的核心证据在 `.agent/`：
 
 ```text
-规划 -> 审查 -> 生成 -> 审计 -> 修复分析
+agent-run.json
+prompt-trace.json
+tool-call-trace.json
+rag-context.json
+repair-rag-context.json
+reviewer-report.json
+audit-report.json
+repair-loop-report.json
+structured-patch-plan.json
+structured-patch-report.json
+structured-patch-rollback-report.json
+structured-patch-snapshots/
 ```
 
-这样做有三个好处：
+benchmark run 会在 `workspace/agent-benchmark-runs/<run-id>/.agent/` 写出 `agent-benchmark-report.json`、`.md` 和 `.html`。
 
-- LLM 负责生成 `ModSpec`、Behavior DSL、受控扩展意图或 repair plan，风险被限制在可校验中间表示里。
-- 每个角色的决策都会写入 `.agent/agent-decisions.md`，方便复盘和面试讲解。
-- Planner 的输入输出会写入 `.agent/prompt-trace.json`，方便定位 LLM 输出、normalize 和 validator 之间的问题。
-- 当生成能力不足时，Free-Code Lab 只在实验副本里探索；成功样本必须再沉淀成 `ModSpec` / DSL / generator / audit / test，不能直接复制进稳定路径。
+## 安全边界
 
-这让项目从“能生成 Mod 的工具”更像一个“可追踪、可评测、可修复的 LLM 多角色开发 Agent”。
+- LLM 不能修改本工具项目源码。
+- LLM 不能输出任意 diff，只能输出结构化 patch action。
+- patch 路径必须限制在 generated workspace。
+- patch 前必须 snapshot，失败时保留 rollback evidence。
+- reviewer 可以要求继续修复，但不能把失败的 audit/build 改成成功。
+- Minecraft runtime 仍不是自动化验收的一部分。
+
+## 辅助能力
+
+Direct Code Lane 是旧主线遗留的受控 workspace patch 通道，可用于解释项目如何从 ModSpec-only 演进到结构化补丁；Free-Code Lab 是隔离实验区，用于探索 generator 暂时表达不了的需求。它们都不是 RC1 推荐 demo 主线。
