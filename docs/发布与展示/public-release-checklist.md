@@ -1,12 +1,12 @@
 # Public Release Checklist
 
-RC1 已发布；这份 checklist 用于后续文档或展示改动前的自检。
+RC1 已发布，RC2 Agentic RAG 已合并；这份 checklist 用于后续文档或展示改动前的自检。
 
 ## 文档
 
-- README 明确写 RC1 / Phase 0-4。
+- README 明确写当前主线是 RC1 基础闭环 + RC2 Agentic RAG。
 - 文档入口从 [../README.md](../README.md) 开始。
-- 主线流程统一为 planner / ModSpec -> generator -> real tool-calling loop -> reviewer -> audit/build -> benchmark -> evidence。
+- 主线流程统一为 planner / ModSpec -> generator -> real tool-calling loop -> Agentic RAG -> reviewer -> audit/build -> benchmark / RAG ablation -> evidence。
 - 旧版本报告只在历史档案或辅助能力文档中出现。
 - 学习材料不作为架构真相源。
 
@@ -30,6 +30,7 @@ $env:PYTHONPATH = (Resolve-Path .\src)
 py -3.11 -m agent.cli agent develop "Create a ruby mod with a ruby item, ruby block and ruby ore." --planner llm --llm-provider mock --workspace-name rc1-release-smoke --no-build --json
 py -3.11 -m agent.cli agent repair rc1-release-smoke --goal "Fix audit failures using safe structured patches." --planner llm --llm-provider mock --max-iterations 5 --no-build --audit --json
 py -3.11 -m agent.cli agent bench --run-name rc1-release-bench --llm-provider mock --eval-limit 1 --repair-limit 1 --no-build --audit --json
+py -3.11 -m agent.cli agent bench --run-name rc2-rag-ablation --suite examples/agentic_rag_ablation.json --llm-provider mock --rag-ablation --audit --json
 ```
 
 如果 `rc1-release-smoke` 或 `rc1-release-bench` 已经存在，最小改动方案是换一个 workspace/run 名，并在打包时传给 `create_public_release.ps1`；只有明确要重建旧目录时才给 CLI 加 `--overwrite`。
@@ -60,7 +61,23 @@ py -3.11 -m agent.cli agent bench --run-name rc1-release-bench --llm-provider mo
 .agent/agent-benchmark-report.html
 ```
 
-发布包脚本应围绕这些当前 RC1 主线产物收集 evidence，而不是引用旧的 `v80` / `v81` / `v82` workspace：
+RC2 RAG ablation 额外确认 `workspace/benchmark-runs/rc2-rag-ablation/.agent/` 至少能看到：
+
+```text
+.agent/agent-benchmark-report.json
+.agent/agent-benchmark-report.md
+.agent/agent-benchmark-report.html
+```
+
+并从 case workspace 里抽样确认：
+
+```text
+.agent/tool-call-trace.json
+.agent/rag-decision-trace.json
+.agent/reviewer-report.json
+```
+
+发布包脚本应围绕这些当前主线产物收集 evidence，而不是引用旧的 `v80` / `v81` / `v82` workspace：
 
 ```powershell
 .\scripts\create_public_release.ps1

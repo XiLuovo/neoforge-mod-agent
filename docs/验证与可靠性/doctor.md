@@ -31,6 +31,6 @@ workspace/doctor-runs/<run-id>/.agent/doctor-report.json
 workspace/doctor-runs/<run-id>/.agent/doctor-report.md
 ```
 
-## RC1 边界
+## 边界
 
-doctor 只能说明环境可运行，不能说明 agent 生成、修复或 benchmark 成功。RC1 展示时通常先跑 doctor，再跑 `agent develop`、`agent repair` 和 `agent bench`。
+doctor 只能说明环境可运行，不能说明 agent 生成、修复或 benchmark 成功。当前展示时通常先跑 doctor，再跑 `agent develop`、`agent repair`、`agent bench` 和需要时的 `--rag-ablation`。

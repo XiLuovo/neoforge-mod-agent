@@ -26,6 +26,48 @@ def test_config(workspace_root: Path) -> AppConfig:
 
 
 class AgentEvalTests(unittest.TestCase):
+    def test_development_e2e_cases_file_is_well_formed(self) -> None:
+        cases_path = PROJECT_ROOT / "examples" / "agent_development_e2e.json"
+        payload = json.loads(cases_path.read_text(encoding="utf-8"))
+        cases = payload["cases"]
+        identifiers = [case["id"] for case in cases]
+
+        self.assertEqual(len(identifiers), len(set(identifiers)))
+        self.assertIn("generate", {case["mode"] for case in cases})
+        self.assertIn("modify", {case["mode"] for case in cases})
+        self.assertTrue(all(case["expected_features"] for case in cases))
+        self.assertTrue(all(case["expected_categories"] for case in cases))
+
+    def test_development_e2e_suite_reports_expected_coverage(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = replace(test_config(Path(tmp)), project_root=PROJECT_ROOT)
+
+            result = BenchmarkEvaluator(config).run(
+                cases_path=PROJECT_ROOT / "examples" / "agent_development_e2e.json",
+                planner_mode="llm",
+                llm_provider="mock",
+                run_build=False,
+                run_audit=True,
+                run_name="unit-development-e2e",
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.metrics["total_cases"], 2)
+            self.assertEqual(result.metrics["expected_feature_match_rate"], 1.0)
+            self.assertEqual(result.metrics["expected_category_match_rate"], 1.0)
+            self.assertEqual(result.metrics["audit_success_rate"], 1.0)
+            self.assertEqual(result.metrics["build_attempted_count"], 0)
+            self.assertEqual(result.metrics["repeat_modify_cases"], 1)
+            self.assertEqual(result.metrics["repeat_modify_success_rate"], 1.0)
+
+            progression = next(case for case in result.cases if case.identifier == "develop_progression_loop")
+            self.assertIn("ruby_pickaxe", progression.matched_expected_features)
+            self.assertIn("progression_report", progression.matched_expected_categories)
+
+            repeat = next(case for case in result.cases if case.identifier == "modify_add_worldgen_repeat")
+            self.assertTrue(repeat.repeat_modify_success)
+            self.assertIn("ruby_ore", repeat.repeat_modify_skipped)
+
     def test_agent_repair_executes_safe_loop_after_audit_failure(self) -> None:
         class BreakBeforeAuditOrchestrator(AgentOrchestrator):
             def __init__(self, config: AppConfig) -> None:

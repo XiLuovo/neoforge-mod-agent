@@ -7,6 +7,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
+from urllib import error
 
 import sys
 
@@ -21,6 +22,7 @@ from neoforge_agent import (
     AppConfig,
     LLMProviderConfig,
     LLMUsage,
+    LLMProviderRequestError,
     LLMPricing,
     MockLLMClient,
     OpenAICompatibleClient,
@@ -115,6 +117,7 @@ class SchemaRetryClient:
 class FakeProviderResponse:
     def __init__(self, payload: dict) -> None:
         self.payload = payload
+        self.status = 200
 
     def __enter__(self) -> "FakeProviderResponse":
         return self
@@ -124,6 +127,9 @@ class FakeProviderResponse:
 
     def read(self) -> bytes:
         return json.dumps(self.payload).encode("utf-8")
+
+    def getcode(self) -> int:
+        return self.status
 
 
 class LLMStabilityTests(unittest.TestCase):
@@ -396,6 +402,55 @@ class LLMStabilityTests(unittest.TestCase):
         self.assertEqual(completion.usage.resolved_total_tokens(), 46)
         self.assertEqual(completion.usage.source, "provider")
         self.assertEqual(completion.estimated_cost_usd, 0.00016)
+        self.assertEqual(len(completion.provider_attempts), 1)
+        self.assertTrue(completion.provider_attempts[0]["success"])
+        self.assertEqual(completion.telemetry_dict()["provider_attempts"][0]["status_code"], 200)
+
+    def test_openai_compatible_retries_retryable_provider_errors(self) -> None:
+        provider_payload = {
+            "id": "chatcmpl-retry-test",
+            "model": "gpt-test",
+            "choices": [{"message": {"content": json.dumps(ruby_payload())}, "finish_reason": "stop"}],
+        }
+        client = OpenAICompatibleClient(
+            base_url="https://example.invalid/v1",
+            api_key="secret-test-key",
+            model="gpt-test",
+            max_retries=4,
+        )
+        failures = [
+            error.HTTPError("https://example.invalid/v1/chat/completions", 500, "server error", {}, None),
+            error.HTTPError("https://example.invalid/v1/chat/completions", 524, "timeout", {}, None),
+            FakeProviderResponse(provider_payload),
+        ]
+
+        with patch("neoforge_agent.llm_client.request.urlopen", side_effect=failures), patch("neoforge_agent.llm_client.time.sleep") as sleep:
+            completion = client.complete_json("system", "user")
+
+        self.assertEqual(completion.parsed_json["mod_id"], "ruby_mod")
+        self.assertEqual([attempt["success"] for attempt in completion.provider_attempts], [False, False, True])
+        self.assertEqual([attempt.get("status_code") for attempt in completion.provider_attempts[:2]], [500, 524])
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_openai_compatible_retry_exhaustion_raises_provider_error(self) -> None:
+        client = OpenAICompatibleClient(
+            base_url="https://example.invalid/v1",
+            api_key="secret-test-key",
+            model="gpt-test",
+            max_retries=1,
+        )
+        failure = error.HTTPError("https://example.invalid/v1/chat/completions", 500, "server error", {}, None)
+
+        with patch("neoforge_agent.llm_client.request.urlopen", side_effect=[failure, failure]), patch("neoforge_agent.llm_client.time.sleep"):
+            with self.assertRaises(LLMProviderRequestError) as raised:
+                client.complete_json("system", "user")
+
+        exc = raised.exception
+        self.assertEqual(exc.status_code, 500)
+        self.assertTrue(exc.retryable)
+        self.assertEqual(exc.attempts, 2)
+        self.assertEqual(len(exc.attempt_summaries), 2)
+        self.assertNotIn("secret-test-key", json.dumps(exc.to_dict()))
 
 
 if __name__ == "__main__":

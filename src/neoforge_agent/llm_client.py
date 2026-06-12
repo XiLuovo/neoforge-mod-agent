@@ -5,7 +5,7 @@ import os
 import re
 import time
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 from urllib import error, request
@@ -25,7 +25,7 @@ from .llm_provider import (
 
 DEFAULT_OPENAI_COMPATIBLE_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_LLM_TIMEOUT_SECONDS = 60
-DEFAULT_LLM_MAX_RETRIES = 2
+DEFAULT_LLM_MAX_RETRIES = 4
 DEFAULT_LLM_SCHEMA_RETRIES = 1
 DEFAULT_LLM_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125 Safari/537.36"
 DOTENV_FILENAMES = (".env.local", ".env")
@@ -42,6 +42,7 @@ class LLMCompletion:
     latency_ms: int | None = None
     request_id: str | None = None
     finish_reason: str | None = None
+    provider_attempts: list[dict[str, Any]] = field(default_factory=list)
 
     def telemetry_dict(self) -> dict[str, Any]:
         return {
@@ -52,6 +53,36 @@ class LLMCompletion:
             "latency_ms": self.latency_ms,
             "request_id": self.request_id,
             "finish_reason": self.finish_reason,
+            "provider_attempts": list(self.provider_attempts or []),
+        }
+
+
+class LLMProviderRequestError(RuntimeError):
+    """Normalized provider failure with retry evidence safe for reports."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        retryable: bool = False,
+        attempts: int = 0,
+        attempt_summaries: list[dict[str, Any]] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.retryable = retryable
+        self.attempts = attempts
+        self.attempt_summaries = list(attempt_summaries or [])
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": type(self).__name__,
+            "message": str(self),
+            "status_code": self.status_code,
+            "retryable": self.retryable,
+            "attempts": self.attempts,
+            "attempt_summaries": list(self.attempt_summaries),
         }
 
 
@@ -376,6 +407,8 @@ class MockLLMClient:
             or "玩法路线" in user_prompt
         ):
             payload = self._load_example("progression_gameplay_loop.json")
+            if self._is_ruby_tool_set_prompt(user_prompt):
+                payload = self._with_ruby_tool_set(payload)
             return self._completion(system_prompt, user_prompt, payload)
         if (
             "controlled java extension" in prompt
@@ -399,6 +432,9 @@ class MockLLMClient:
         ):
             payload = self._ruby_realm_payload()
             return self._completion(system_prompt, user_prompt, payload)
+        holdout_payload = self._holdout_payload(user_prompt)
+        if holdout_payload is not None:
+            return self._completion(system_prompt, user_prompt, holdout_payload)
         if any(token in user_prompt for token in ("一套红宝石工具", "红宝石工具套装", "红宝石全套工具")) or "ruby tool set" in prompt or "ruby tools" in prompt:
             payload = self._ruby_payload(self._ruby_tool_set())
         elif any(token in user_prompt for token in ("一套红宝石护甲", "红宝石护甲套装", "红宝石全套护甲")) or "ruby armor set" in prompt or "ruby armor" in prompt:
@@ -601,6 +637,228 @@ class MockLLMClient:
             "features": features,
         }
 
+    def _holdout_payload(self, user_prompt: str) -> dict | None:
+        prompt = user_prompt.lower()
+        material_match = re.search(r"holdout material\s*:\s*([a-z][a-z0-9_-]*)", prompt)
+        features_match = re.search(r"holdout features\s*:\s*([a-z_]+)", prompt)
+        if material_match is None or features_match is None:
+            return None
+        material = material_match.group(1)
+        setup_kind = features_match.group(1)
+        mod_id_match = re.search(r"mod id\s*:\s*([a-z][a-z0-9_]*)", prompt)
+        mod_id = mod_id_match.group(1) if mod_id_match else f"{material}_holdout"
+        display = " ".join(part.capitalize() for part in material.split("_"))
+        features = self._holdout_features(mod_id, material, display, setup_kind)
+        return {
+            "mod_id": mod_id,
+            "mod_name": f"{display} Holdout",
+            "package": f"com.generated.{mod_id}",
+            "version": "0.1.0",
+            "features": features,
+        }
+
+    def _holdout_features(self, mod_id: str, material: str, display: str, setup_kind: str) -> list[dict]:
+        item = self._holdout_item_feature(material, display)
+        if setup_kind == "block":
+            return [item, self._holdout_block_feature(material, display)]
+        if setup_kind == "recipe":
+            return [
+                item,
+                self._holdout_block_feature(material, display),
+                self._holdout_sword_feature(material, display),
+                self._holdout_block_recipe(mod_id, material),
+                self._holdout_sword_recipe(mod_id, material),
+            ]
+        if setup_kind == "ore":
+            return [item, self._holdout_ore_feature(mod_id, material, display)]
+        if setup_kind == "behavior_item":
+            return [self._holdout_charm_feature(material, display)]
+        if setup_kind == "machine":
+            return [
+                item,
+                self._holdout_machine_feature(material, display),
+                self._holdout_machine_recipe(mod_id, material),
+            ]
+        if setup_kind == "entity":
+            return [
+                self._holdout_item_feature(f"{material}_scale", f"{display} Scale"),
+                self._holdout_entity_feature(mod_id, material, display),
+            ]
+        return [item]
+
+    def _holdout_item_feature(self, identifier: str, display_name: str) -> dict:
+        return {
+            "type": "item",
+            "id": identifier,
+            "display_name_en_us": display_name,
+            "display_name_zh_cn": "",
+        }
+
+    def _holdout_block_feature(self, material: str, display: str) -> dict:
+        return {
+            "type": "block",
+            "id": f"{material}_block",
+            "display_name_en_us": f"Block of {display}",
+            "display_name_zh_cn": "",
+            "strength": 5.0,
+            "resistance": 6.0,
+            "sound": "metal",
+            "requires_correct_tool": True,
+            "tool_tier": "iron",
+            "block_kind": "cube",
+        }
+
+    def _holdout_sword_feature(self, material: str, display: str) -> dict:
+        return {
+            "type": "sword",
+            "id": f"{material}_sword",
+            "display_name_en_us": f"{display} Sword",
+            "display_name_zh_cn": "",
+            "attack_damage_bonus": 4,
+            "attack_speed": -2.4,
+            "tool_material": material,
+        }
+
+    def _holdout_block_recipe(self, mod_id: str, material: str) -> dict:
+        return {
+            "type": "recipe",
+            "id": f"{material}_block",
+            "recipe_type": "shaped",
+            "pattern": ["MMM", "MMM", "MMM"],
+            "keys": {"M": f"{mod_id}:{material}"},
+            "result": f"{mod_id}:{material}_block",
+            "count": 1,
+            "category": "building",
+            "group": f"{material}_holdout",
+        }
+
+    def _holdout_sword_recipe(self, mod_id: str, material: str) -> dict:
+        return {
+            "type": "recipe",
+            "id": f"{material}_sword",
+            "recipe_type": "shaped",
+            "pattern": ["M", "M", "S"],
+            "keys": {"M": f"{mod_id}:{material}", "S": "minecraft:stick"},
+            "result": f"{mod_id}:{material}_sword",
+            "count": 1,
+            "category": "equipment",
+            "group": f"{material}_holdout",
+        }
+
+    def _holdout_ore_feature(self, mod_id: str, material: str, display: str) -> dict:
+        return {
+            "type": "ore",
+            "id": f"{material}_ore",
+            "display_name_en_us": f"{display} Ore",
+            "display_name_zh_cn": "",
+            "drop": f"{mod_id}:{material}",
+            "strength": 3.0,
+            "resistance": 3.0,
+            "sound": "stone",
+            "requires_correct_tool": True,
+            "tool_tier": "iron",
+            "worldgen": {
+                "enabled": True,
+                "dimension": "minecraft:overworld",
+                "min_y": -64,
+                "max_y": 32,
+                "vein_size": 6,
+                "veins_per_chunk": 4,
+            },
+        }
+
+    def _holdout_charm_feature(self, material: str, display: str) -> dict:
+        return {
+            "type": "item",
+            "id": f"{material}_charm",
+            "display_name_en_us": f"{display} Charm",
+            "display_name_zh_cn": "",
+            "behavior": {
+                "type": "right_click_heal",
+                "amount": 4,
+                "cooldown_ticks": 400,
+                "consume": False,
+            },
+        }
+
+    def _holdout_machine_feature(self, material: str, display: str) -> dict:
+        return {
+            "type": "machine",
+            "id": f"{material}_compressor",
+            "display_name_en_us": f"{display} Compressor",
+            "display_name_zh_cn": "",
+            "strength": 4.0,
+            "resistance": 6.0,
+            "sound": "metal",
+            "requires_correct_tool": True,
+            "tool_tier": "iron",
+            "machine_kind": "compressor",
+            "inventory_slots": 2,
+            "input_slots": 1,
+            "output_slots": 1,
+            "energy_capacity": 10000,
+            "energy_per_tick": 20,
+            "max_progress": 100,
+        }
+
+    def _holdout_machine_recipe(self, mod_id: str, material: str) -> dict:
+        return {
+            "type": "recipe",
+            "id": f"{material}_compressor",
+            "recipe_type": "shaped",
+            "pattern": ["IMI", "R R", "IMI"],
+            "keys": {"I": "minecraft:iron_ingot", "M": f"{mod_id}:{material}", "R": "minecraft:redstone"},
+            "result": f"{mod_id}:{material}_compressor",
+            "count": 1,
+            "category": "redstone",
+            "group": f"{material}_machines",
+        }
+
+    def _holdout_entity_feature(self, mod_id: str, material: str, display: str) -> dict:
+        return {
+            "type": "entity",
+            "id": f"{material}_sentinel",
+            "display_name_en_us": f"{display} Sentinel",
+            "display_name_zh_cn": "",
+            "entity_kind": "monster",
+            "category": "monster",
+            "width": 0.8,
+            "height": 2.1,
+            "tracking_range": 12,
+            "update_interval": 3,
+            "xp_reward": 8,
+            "attributes": {
+                "max_health": 28,
+                "movement_speed": 0.24,
+                "attack_damage": 5,
+                "armor": 3,
+                "follow_range": 28,
+                "knockback_resistance": 0.05,
+            },
+            "drops": [
+                {
+                    "item": f"{mod_id}:{material}_scale",
+                    "min_count": 1,
+                    "max_count": 2,
+                    "chance": 0.6,
+                }
+            ],
+            "spawn": {
+                "enabled": True,
+                "biomes": "#minecraft:is_overworld",
+                "weight": 30,
+                "min_count": 1,
+                "max_count": 2,
+                "placement": "on_ground",
+            },
+            "goals": [
+                {"type": "float", "priority": 0},
+                {"type": "melee_attack", "priority": 2, "speed": 1.05},
+                {"type": "target_player", "priority": 3},
+            ],
+            "attack": {"type": "melee", "damage": 5, "speed": 1.05},
+        }
+
     def _is_direct_code_prompt(self, text: str) -> bool:
         prompt = text.lower()
         return any(
@@ -735,6 +993,29 @@ class MockLLMClient:
             *[self._ruby_tool_feature(tool_type) for tool_type in ("pickaxe", "axe", "shovel", "hoe")],
         ]
         return [*equipment, *self._ruby_equipment_recipes(("ruby_sword", "ruby_pickaxe", "ruby_axe", "ruby_shovel", "ruby_hoe"))]
+
+    def _is_ruby_tool_set_prompt(self, text: str) -> bool:
+        prompt = text.lower()
+        return "ruby tool set" in prompt or "ruby tools" in prompt
+
+    def _with_ruby_tool_set(self, payload: dict) -> dict:
+        cloned = json.loads(json.dumps(payload, ensure_ascii=False))
+        features = cloned.setdefault("features", [])
+        if not isinstance(features, list):
+            features = []
+            cloned["features"] = features
+        seen = {
+            (str(feature.get("type", "")), str(feature.get("id", feature.get("identifier", ""))))
+            for feature in features
+            if isinstance(feature, dict)
+        }
+        for feature in self._ruby_tool_set():
+            key = (str(feature.get("type", "")), str(feature.get("id", feature.get("identifier", ""))))
+            if key in seen:
+                continue
+            features.append(feature)
+            seen.add(key)
+        return cloned
 
     def _ruby_armor_set(self) -> list[dict]:
         equipment = [
@@ -1105,6 +1386,8 @@ class MockLLMClient:
         rag_policy = prompt_payload.get("rag_policy", {}) if isinstance(prompt_payload, dict) else {}
         rag_mode = str(rag_policy.get("mode", "auto") if isinstance(rag_policy, dict) else "auto").lower()
         rag_off = rag_mode == "off"
+        goal_text = str(prompt_payload.get("goal", "") if isinstance(prompt_payload, dict) else "").lower()
+        audit_text = json.dumps(audit_gate, ensure_ascii=False).lower() if isinstance(audit_gate, dict) else ""
 
         if loop_purpose.startswith("develop"):
             if "retrieve_rag" not in completed_actions:
@@ -1239,8 +1522,28 @@ class MockLLMClient:
                 "args": {"status": "success", "summary": "Missing NeoForge metadata template restored and audited."},
             }
 
-        goal_text = str(prompt_payload.get("goal", "") if isinstance(prompt_payload, dict) else "").lower()
-        audit_text = json.dumps(audit_gate, ensure_ascii=False).lower() if isinstance(audit_gate, dict) else ""
+        generic_regen_failure = any(
+            token in audit_text
+            for token in (
+                "invalid json",
+                "json is invalid",
+                "not a png",
+                "png is truncated",
+                "missing expected content",
+                "missing lang key",
+                "configured feature target",
+                "configured feature must",
+                "missing pack.description",
+                "missing 'pack' object",
+            )
+        )
+        if generic_regen_failure and "regenerate_managed_files" not in completed_actions:
+            return {
+                "thought_summary": "The audit failure is in a managed generated artifact, so regenerate managed files before patching.",
+                "action": "regenerate_managed_files",
+                "args": {},
+            }
+
         recipe_failure = (
             "missing_agentic_rag_material" in prompt
             or "recipe/resource" in goal_text
@@ -1284,16 +1587,26 @@ class MockLLMClient:
                     prefix="src/main/resources/data/",
                     suffix=".json",
                 ) or "src/main/resources/data/ruby_mod/recipe/ruby_sword.json"
+                bad_reference_match = re.search(r"([a-z0-9_]+):missing_agentic_rag_material", prompt)
+                bad_reference = bad_reference_match.group(0) if bad_reference_match else "ruby_mod:missing_agentic_rag_material"
+                namespace = bad_reference_match.group(1) if bad_reference_match else "ruby_mod"
+                if namespace.endswith("_holdout"):
+                    material = namespace[: -len("_holdout")]
+                elif "ruby" in namespace or "ruby" in prompt:
+                    material = "ruby"
+                else:
+                    material = namespace.removesuffix("_mod")
+                fixed_reference = f"{namespace}:{material}"
                 return {
-                    "thought_summary": "Patch the broken generated recipe reference back to the local ruby item id with citation support.",
+                    "thought_summary": "Patch the broken generated recipe reference back to the local material item id with citation support.",
                     "action": "apply_structured_patch",
                     "args": {
                         "changes": [
                             {
                                 "operation": "replace_text",
                                 "path": recipe_path,
-                                "old": "ruby_mod:missing_agentic_rag_material",
-                                "new": "ruby_mod:ruby",
+                                "old": bad_reference,
+                                "new": fixed_reference,
                                 "reason": "Generated recipe JSON must reference an existing namespaced item id.",
                                 "citation_ids": ["data.recipes_loot_tags"],
                             }
@@ -1752,40 +2065,85 @@ class OpenAICompatibleClient:
             "temperature": 0,
         }
         body = json.dumps(payload).encode("utf-8")
-        req = request.Request(
-            url=f"{self.base_url}/chat/completions",
-            data=body,
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "User-Agent": _llm_user_agent(),
-            },
-            method="POST",
-        )
         last_error: BaseException | None = None
         attempts = self.max_retries + 1
         started_at = time.perf_counter()
-        for attempt in range(attempts):
+        attempt_summaries: list[dict[str, Any]] = []
+        response_payload: dict[str, Any] | None = None
+        raw_text = ""
+        choice: dict[str, Any] = {}
+        for attempt in range(1, attempts + 1):
+            attempt_started_at = time.perf_counter()
             try:
+                req = request.Request(
+                    url=f"{self.base_url}/chat/completions",
+                    data=body,
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "User-Agent": _llm_user_agent(),
+                    },
+                    method="POST",
+                )
                 with request.urlopen(req, timeout=self.timeout_seconds) as response:
+                    status_code = _response_status_code(response)
                     response_payload = json.loads(response.read().decode("utf-8"))
+                choice = response_payload["choices"][0]
+                message = choice["message"]["content"]
+                if isinstance(message, list):
+                    raw_text = "".join(part.get("text", "") for part in message if isinstance(part, dict))
+                else:
+                    raw_text = str(message)
+                attempt_summaries.append(
+                    _provider_attempt_summary(
+                        attempt=attempt,
+                        success=True,
+                        latency_ms=int((time.perf_counter() - attempt_started_at) * 1000),
+                        status_code=status_code,
+                    )
+                )
                 break
             except Exception as exc:  # noqa: BLE001 - provider failures are normalized below.
                 last_error = exc
-                if attempt >= attempts - 1 or not _is_retryable_provider_error(exc):
-                    raise RuntimeError(_format_provider_error(exc)) from exc
-                time.sleep(min(0.25 * (attempt + 1), 1.0))
+                retryable = _is_retryable_provider_error(exc)
+                attempt_summaries.append(
+                    _provider_attempt_summary(
+                        attempt=attempt,
+                        success=False,
+                        latency_ms=int((time.perf_counter() - attempt_started_at) * 1000),
+                        status_code=_provider_status_code(exc),
+                        retryable=retryable,
+                        error=exc,
+                    )
+                )
+                if attempt >= attempts or not retryable:
+                    raise LLMProviderRequestError(
+                        _format_provider_error(exc),
+                        status_code=_provider_status_code(exc),
+                        retryable=retryable,
+                        attempts=attempt,
+                        attempt_summaries=attempt_summaries,
+                    ) from exc
+                time.sleep(_provider_backoff_seconds(attempt))
         else:
-            raise RuntimeError(_format_provider_error(last_error))
+            raise LLMProviderRequestError(
+                _format_provider_error(last_error),
+                status_code=_provider_status_code(last_error),
+                retryable=bool(last_error and _is_retryable_provider_error(last_error)),
+                attempts=attempts,
+                attempt_summaries=attempt_summaries,
+            )
 
         latency_ms = int((time.perf_counter() - started_at) * 1000)
-        choice = response_payload["choices"][0]
-        message = choice["message"]["content"]
-        if isinstance(message, list):
-            raw_text = "".join(part.get("text", "") for part in message if isinstance(part, dict))
-        else:
-            raw_text = str(message)
+        if response_payload is None:
+            raise LLMProviderRequestError(
+                _format_provider_error(last_error),
+                status_code=_provider_status_code(last_error),
+                retryable=bool(last_error and _is_retryable_provider_error(last_error)),
+                attempts=len(attempt_summaries),
+                attempt_summaries=attempt_summaries,
+            )
         parsed = _extract_json_object(raw_text)
         usage = _usage_from_response_payload(response_payload, system_prompt, user_prompt, raw_text)
         return LLMCompletion(
@@ -1798,6 +2156,7 @@ class OpenAICompatibleClient:
             latency_ms=latency_ms,
             request_id=str(response_payload.get("id")) if response_payload.get("id") else None,
             finish_reason=str(choice.get("finish_reason")) if choice.get("finish_reason") else None,
+            provider_attempts=attempt_summaries,
         )
 
 
@@ -1994,6 +2353,56 @@ def _is_retryable_provider_error(exc: BaseException) -> bool:
     if isinstance(exc, error.HTTPError):
         return exc.code == 429 or 500 <= exc.code < 600
     return isinstance(exc, (TimeoutError, error.URLError, OSError, json.JSONDecodeError, KeyError, IndexError))
+
+
+def _provider_status_code(exc: BaseException | None) -> int | None:
+    if isinstance(exc, error.HTTPError):
+        return int(exc.code)
+    return None
+
+
+def _response_status_code(response: Any) -> int | None:
+    status = getattr(response, "status", None)
+    if status is not None:
+        try:
+            return int(status)
+        except (TypeError, ValueError):
+            return None
+    getcode = getattr(response, "getcode", None)
+    if callable(getcode):
+        try:
+            code = getcode()
+            return int(code) if code is not None else None
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _provider_attempt_summary(
+    *,
+    attempt: int,
+    success: bool,
+    latency_ms: int,
+    status_code: int | None = None,
+    retryable: bool = False,
+    error: BaseException | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "attempt": attempt,
+        "success": success,
+        "latency_ms": latency_ms,
+    }
+    if status_code is not None:
+        payload["status_code"] = status_code
+    if not success:
+        payload["retryable"] = retryable
+        payload["error_type"] = type(error).__name__ if error else "provider_error"
+        payload["error"] = _format_provider_error(error)
+    return payload
+
+
+def _provider_backoff_seconds(attempt: int) -> float:
+    return min(0.25 * (2 ** max(0, attempt - 1)), 2.0)
 
 
 def _format_provider_error(exc: BaseException | None) -> str:

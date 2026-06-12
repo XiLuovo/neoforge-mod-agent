@@ -1,8 +1,8 @@
 # ModSpec Reference
 
-> RC1 定位：`ModSpec` 是 `minecraft.neoforge` domain 的稳定规格输入层。它描述要生成的 Mod 内容；真正的 Java、JSON、PNG、resources 和 `.agent` evidence 由 deterministic generator 或受控 structured patch executor 产出。
+> 当前定位：`ModSpec` 是 `minecraft.neoforge` domain 的稳定规格输入层。它描述要生成的 Mod 内容；真正的 Java、JSON、PNG、resources 和 `.agent` evidence 由 deterministic generator 或受控 structured patch executor 产出。
 
-## 在 RC1 主线中的位置
+## 在当前主线中的位置
 
 ```text
 Natural language
@@ -10,6 +10,7 @@ Natural language
 -> ModSpec
 -> deterministic generator baseline
 -> real tool-calling repair/refine loop
+-> Agentic RAG / structured patch
 -> reviewer
 -> audit/build gate
 ```

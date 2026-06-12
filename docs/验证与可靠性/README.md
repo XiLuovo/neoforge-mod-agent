@@ -1,6 +1,6 @@
 ﻿# 验证与可靠性
 
-RC1 中，验证不只看静态报告：`agent bench` 会运行真实 develop/repair/reviewer/tool-calling 流程，并从 trace、reviewer report、audit/build result 和 rollback evidence 计算指标。
+当前验证不只看静态报告：`agent bench` 会运行真实 develop/repair/reviewer/tool-calling 流程，并从 trace、reviewer report、audit/build result、RAG decision trace 和 rollback evidence 计算指标。RC2 还支持 `--rag-ablation`，对同一批 repair case 运行 RAG on/off paired runs。
 
 > 这里放测试、评测、故障注入、自修复和 CI。
 

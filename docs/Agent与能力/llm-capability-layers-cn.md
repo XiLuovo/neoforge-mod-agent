@@ -1,6 +1,6 @@
 # LLM 能力分层
 
-RC1 之后，LLM 的职责不是“一次性写完整 Mod”，而是在受控边界内做结构化决策。
+当前主线中，LLM 的职责不是“一次性写完整 Mod”，而是在受控边界内做结构化决策。
 
 ## 当前分层
 
@@ -49,7 +49,7 @@ reviewer 可以触发下一轮 repair/refine context，但不能替代 audit/bui
 
 ## 第五层：辅助实验
 
-Direct Code Lane 和 Free-Code Lab 是辅助能力：前者解释受控 patch 的演进，后者帮助把实验样本沉淀回 deterministic generator。它们不是 RC1 推荐主线。
+Direct Code Lane 和 Free-Code Lab 是辅助能力：前者解释受控 patch 的演进，后者帮助把实验样本沉淀回 deterministic generator。它们不是当前推荐主线。
 
 ## 面试说法
 

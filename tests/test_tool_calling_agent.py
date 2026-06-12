@@ -20,8 +20,12 @@ from neoforge_agent import (
     AgentOrchestrator,
     AgentPromptTrace,
     AppConfig,
+    LLMCompletion,
+    LLMProviderRequestError,
     LLMReviewResult,
+    ModProjectPlanner,
     StructuredPatchApplier,
+    ToolCallingRepairAgent,
     ToolCallingRepairResult,
 )
 from neoforge_agent.auditor import WorkspaceAuditor
@@ -230,6 +234,126 @@ class ToolCallingAgentTests(unittest.TestCase):
                     )
                     self.assertFalse(result.success)
                     self.assertTrue(result.errors)
+
+    def test_provider_error_on_managed_audit_failure_uses_deterministic_fallback(self) -> None:
+        class FailingProviderClient:
+            provider_name = "openai-compatible"
+            model = "provider-failure-test"
+
+            def complete_json(self, system_prompt: str, user_prompt: str) -> LLMCompletion:
+                raise LLMProviderRequestError(
+                    "LLM provider returned HTTP 500.",
+                    status_code=500,
+                    retryable=True,
+                    attempts=2,
+                    attempt_summaries=[
+                        {"attempt": 1, "success": False, "status_code": 500, "retryable": True},
+                        {"attempt": 2, "success": False, "status_code": 500, "retryable": True},
+                    ],
+                )
+
+        with tempfile.TemporaryDirectory(prefix="tool-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+            orchestrator = AgentOrchestrator(config)
+            setup = orchestrator.run_generate(
+                "Create a ruby mod with ruby.",
+                planner_mode="llm",
+                llm_provider="mock",
+                workspace_name="tool-agent-provider-fallback",
+                overwrite=True,
+                run_build=False,
+                run_audit=True,
+                repair=True,
+            )
+            self.assertTrue(setup.success)
+            self.assertIsNotNone(setup.workspace)
+
+            model_path = setup.workspace / "src" / "main" / "resources" / "assets" / "ruby_mod" / "models" / "item" / "ruby.json"
+            model_path.unlink()
+            audit_payload = WorkspaceAuditor(config).audit_workspace(setup.workspace).to_dict()
+            audit_payload["attempted"] = True
+
+            result = ToolCallingRepairAgent(config, llm_client=FailingProviderClient()).run(
+                setup.workspace,
+                goal="Fix managed audit failures.",
+                llm_provider="openai-compatible",
+                max_iterations=2,
+                run_build=False,
+                run_audit=True,
+                initial_build={"attempted": False, "success": None},
+                initial_audit=audit_payload,
+            )
+
+            actions = [entry["action"] for entry in result.trace]
+            self.assertTrue(result.success)
+            self.assertEqual(actions[:2], ["provider_error", "regenerate_managed_files"])
+            self.assertTrue(model_path.exists())
+            self.assertEqual(result.trace[0]["observation"]["provider_error"]["status_code"], 500)
+            self.assertEqual(result.prompt_traces[0].completion_attempts[0]["status_code"], 500)
+
+    def test_worldgen_rule_test_guardrail_regenerates_after_bad_patch(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="tool-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+            generation = ModProjectPlanner(config).execute(
+                "Add ruby ore that generates underground in the overworld, Y -64 to 32, vein size 6, 4 per chunk.",
+                workspace_name="tool-agent-rule-test-guardrail",
+                overwrite=True,
+                run_build=False,
+            )
+            self.assertTrue(generation.succeeded)
+            workspace = generation.workspace_dir
+            configured = workspace / "src" / "main" / "resources" / "data" / "ruby_mod" / "worldgen" / "configured_feature" / "ruby_ore.json"
+            payload = json.loads(configured.read_text(encoding="utf-8"))
+            payload["config"]["targets"][0]["target"] = "minecraft:stone_ore_replaceables"
+            bad_content = json.dumps(payload, indent=2)
+            configured.write_text(bad_content, encoding="utf-8")
+
+            class BadRulePatchClient:
+                provider_name = "openai-compatible"
+
+                def complete_json(self, system_prompt: str, user_prompt: str) -> LLMCompletion:
+                    action = {
+                        "thought_summary": "Apply a patch that still leaves the rule-test malformed.",
+                        "action": "apply_structured_patch",
+                        "args": {
+                            "changes": [
+                                {
+                                    "operation": "write_file",
+                                    "path": "src/main/resources/data/ruby_mod/worldgen/configured_feature/ruby_ore.json",
+                                    "content": bad_content,
+                                    "reason": "unit test keeps malformed rule-test for guardrail coverage",
+                                }
+                            ]
+                        },
+                    }
+                    return LLMCompletion(
+                        raw_text=json.dumps(action),
+                        parsed_json=action,
+                        provider=self.provider_name,
+                        model="bad-rule-patch",
+                        provider_attempts=[{"attempt": 1, "success": True, "status_code": 200}],
+                    )
+
+            audit_payload = WorkspaceAuditor(config).audit_workspace(workspace).to_dict()
+            audit_payload["attempted"] = True
+            result = ToolCallingRepairAgent(config, llm_client=BadRulePatchClient()).run(
+                workspace,
+                goal="Fix worldgen configured feature audit failures.",
+                llm_provider="openai-compatible",
+                max_iterations=1,
+                run_build=False,
+                run_audit=True,
+                initial_build={"attempted": False, "success": None},
+                initial_audit=audit_payload,
+            )
+
+            actions = [entry["action"] for entry in result.trace]
+            repaired = json.loads(configured.read_text(encoding="utf-8"))
+            rule_test = repaired["config"]["targets"][0]["target"]
+            self.assertTrue(result.success)
+            self.assertEqual(actions, ["apply_structured_patch", "run_audit", "regenerate_managed_files"])
+            self.assertEqual(rule_test["predicate_type"], "minecraft:tag_match")
+            self.assertEqual(rule_test["tag"], "minecraft:stone_ore_replaceables")
 
 
 if __name__ == "__main__":

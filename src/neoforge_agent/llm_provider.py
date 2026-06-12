@@ -234,7 +234,7 @@ def openai_compatible_provider_metadata(
         retry_policy={
             "max_retries": max_retries,
             "retryable_errors": ["HTTP 429", "HTTP 5xx", "timeout", "url_error", "decode_error"],
-            "backoff": "linear_capped_250ms_to_1s",
+            "backoff": "exponential_capped_250ms_to_2s",
         },
     )
 

@@ -1,6 +1,6 @@
 # Project Limitations
 
-RC1 已经是受控 NeoForge Minecraft Mod Coding Agent，但仍有明确边界。
+当前项目已经是受控 NeoForge Minecraft Mod Coding Agent，但仍有明确边界。
 
 ## 不是通用 Coding Agent
 
@@ -28,7 +28,7 @@ RAG 提供本地 NeoForge 知识和 citation，但它不是权威外部文档同
 
 ## 辅助能力边界
 
-Direct Code Lane 和 Free-Code Lab 是辅助/兼容能力：前者解释受控补丁通道，后者用于隔离实验和能力采集。它们不改变 RC1 主线，也不自动修改稳定 generator。
+Direct Code Lane 和 Free-Code Lab 是辅助/兼容能力：前者解释受控补丁通道，后者用于隔离实验和能力采集。它们不改变当前主线，也不自动修改稳定 generator。
 
 ## 后续优先级
 

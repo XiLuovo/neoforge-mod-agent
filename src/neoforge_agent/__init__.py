@@ -5,7 +5,7 @@ from .agentic_rag import AgenticRAGDecision, AgenticRAGPolicy, AgenticRAGRetriev
 from .agent_orchestrator import AgentOrchestrator, NeoForgeRuntimePlugin
 from .auditor import AuditCheck, AuditIssue, AuditResult, WorkspaceAuditor, audit_workspace
 from .balance_generator import BalancePlanGenerator
-from .benchmark_report import AgentBenchmarkCaseResult, AgentBenchmarkCaseSpec, AgentBenchmarkResult, AgentBenchmarkRunner, BenchmarkFailureType, BenchmarkModelRun, BenchmarkPageResult, BenchmarkReportRunner, BenchmarkRuntimeCase
+from .benchmark_report import AgentBenchmarkCaseResult, AgentBenchmarkCaseSpec, AgentBenchmarkResult, AgentBenchmarkRunner, BenchmarkFailureType, BenchmarkModelRun, BenchmarkPageResult, BenchmarkReportRunner, BenchmarkRuntimeCase, generate_agent_benchmark_holdout_cases
 from .behavior_generator import BehaviorGenerator
 from .builder import GradleBuilder
 from .capabilities import Capability, CapabilityCatalog, CapabilityMatrixResult, CapabilitySection
@@ -23,7 +23,7 @@ from .failure_lab import FailureLabCaseResult, FailureLabCaseSpec, FailureLabRes
 from .free_code_lab import FreeCodeChange, FreeCodeLabResult, FreeCodeLabRunner, FreeCodePlan, HarvestReportResult, HarvestReportRunner
 from .golden_tests import GoldenCase, GoldenCaseResult, GoldenCheck, GoldenTestResult, GoldenTestRunner, default_golden_cases
 from .knowledge_base import KnowledgeEntry, KnowledgeHit, KnowledgeQueryResult, KnowledgeQueryRunner, NeoForgeKnowledgeBase
-from .llm_client import LLMCompletion, LLMProviderConfig, LLMProviderHealth, MockLLMClient, OpenAICompatibleClient, check_llm_provider_health, create_llm_client, get_llm_provider_metadata, inspect_llm_provider_config
+from .llm_client import LLMCompletion, LLMProviderConfig, LLMProviderHealth, LLMProviderRequestError, MockLLMClient, OpenAICompatibleClient, check_llm_provider_health, create_llm_client, get_llm_provider_metadata, inspect_llm_provider_config
 from .llm_engineering_report import LLMEngineeringReportResult, LLMEngineeringReportRunner
 from .llm_provider import LLMPricing, LLMProviderMetadata, LLMProviderRegistry, LLMRequestOptions, LLMStreamEvent, LLMUsage, estimate_llm_usage, estimate_tokens
 from .llm_eval_report import LLMEvalReportResult, RealLLMEvalReportRunner
@@ -127,6 +127,7 @@ __all__ = [
     "BenchmarkPageResult",
     "BenchmarkReportRunner",
     "BenchmarkRuntimeCase",
+    "generate_agent_benchmark_holdout_cases",
     "BenchmarkEvaluator",
     "BlockSpec",
     "BehaviorGenerator",
@@ -209,6 +210,7 @@ __all__ = [
     "LLMPricing",
     "LLMProviderConfig",
     "LLMProviderHealth",
+    "LLMProviderRequestError",
     "LLMProviderMetadata",
     "LLMProviderRegistry",
     "LLMRequestOptions",

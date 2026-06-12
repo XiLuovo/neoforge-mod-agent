@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import random
+import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from html import escape
@@ -13,6 +15,7 @@ from .agent_orchestrator import AgentOrchestrator
 from .config import AppConfig
 from .evaluator import BenchmarkEvaluator, EvalRunResult
 from .llm_client import get_llm_provider_metadata, inspect_llm_provider_config
+from .models import ModSpec
 from .repair_loop import AutoRepairRunner
 from .repair_eval import RepairEvalResult, RepairEvalRunner
 from .tools import ensure_directory, write_json, write_text
@@ -139,6 +142,9 @@ class AgentBenchmarkCaseSpec:
     breakage: str = ""
     max_iterations: int = 5
     rag_mode: str | None = None
+    category: str = ""
+    expected_issue_prefixes: list[str] = field(default_factory=list)
+    expected_repair_strategy: str = ""
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "AgentBenchmarkCaseSpec":
@@ -150,6 +156,9 @@ class AgentBenchmarkCaseSpec:
             breakage=str(payload.get("breakage") or ""),
             max_iterations=max(1, int(payload.get("max_iterations") or 5)),
             rag_mode=str(payload.get("rag_mode")) if payload.get("rag_mode") is not None else None,
+            category=str(payload.get("category") or ""),
+            expected_issue_prefixes=_string_list(payload.get("expected_issue_prefixes")),
+            expected_repair_strategy=str(payload.get("expected_repair_strategy") or ""),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -161,6 +170,9 @@ class AgentBenchmarkCaseSpec:
             "breakage": self.breakage,
             "max_iterations": self.max_iterations,
             "rag_mode": self.rag_mode,
+            "category": self.category,
+            "expected_issue_prefixes": list(self.expected_issue_prefixes),
+            "expected_repair_strategy": self.expected_repair_strategy,
         }
 
 
@@ -171,6 +183,11 @@ class AgentBenchmarkCaseResult:
     request: str
     success: bool
     workspace: str | None
+    breakage: str = ""
+    category: str = ""
+    injected_paths: list[str] = field(default_factory=list)
+    initial_audit_issue_ids: list[str] = field(default_factory=list)
+    detected_expected_failure: bool | None = None
     agent_run_json_path: str | None = None
     tool_call_trace_json_path: str | None = None
     reviewer_report_json_path: str | None = None
@@ -197,6 +214,9 @@ class AgentBenchmarkCaseResult:
     rag_citations_count: int = 0
     rag_citation_coverage: float = 0.0
     trace_paths: list[str] = field(default_factory=list)
+    failure_kind: str = ""
+    provider_status_code: int | None = None
+    provider_error_summary: str = ""
     errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -206,6 +226,11 @@ class AgentBenchmarkCaseResult:
             "request": self.request,
             "success": self.success,
             "workspace": self.workspace,
+            "breakage": self.breakage,
+            "category": self.category,
+            "injected_paths": list(self.injected_paths),
+            "initial_audit_issue_ids": list(self.initial_audit_issue_ids),
+            "detected_expected_failure": self.detected_expected_failure,
             "agent_run_json_path": self.agent_run_json_path,
             "tool_call_trace_json_path": self.tool_call_trace_json_path,
             "reviewer_report_json_path": self.reviewer_report_json_path,
@@ -232,6 +257,9 @@ class AgentBenchmarkCaseResult:
             "rag_citations_count": self.rag_citations_count,
             "rag_citation_coverage": self.rag_citation_coverage,
             "trace_paths": list(self.trace_paths),
+            "failure_kind": self.failure_kind,
+            "provider_status_code": self.provider_status_code,
+            "provider_error_summary": self.provider_error_summary,
             "errors": list(self.errors),
         }
 
@@ -271,6 +299,132 @@ class AgentBenchmarkResult:
         return payload
 
 
+@dataclass(slots=True)
+class AgentBenchmarkBreakageInjection:
+    breakage: str
+    injected_paths: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "breakage": self.breakage,
+            "injected_paths": list(self.injected_paths),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class AgentBenchmarkHoldoutTemplate:
+    identifier: str
+    breakage: str
+    category: str
+    setup_kind: str
+    expected_issue_prefixes: tuple[str, ...]
+    expected_repair_strategy: str
+
+
+_HOLDOUT_MATERIALS: tuple[tuple[str, str], ...] = (
+    ("sapphire", "Sapphire"),
+    ("cobalt", "Cobalt"),
+    ("amber", "Amber"),
+    ("topaz", "Topaz"),
+    ("opal", "Opal"),
+    ("garnet", "Garnet"),
+    ("silver", "Silver"),
+    ("mythril", "Mythril"),
+    ("onyx", "Onyx"),
+    ("jade", "Jade"),
+    ("crystal", "Crystal"),
+    ("moonstone", "Moonstone"),
+)
+
+
+def generate_agent_benchmark_holdout_cases(*, seed: str | int = "default", limit: int = 8) -> list[AgentBenchmarkCaseSpec]:
+    """Generate deterministic randomized repair benchmark cases for holdout checks."""
+
+    templates = list(_agent_benchmark_holdout_templates())
+    count = max(0, min(int(limit), len(templates)))
+    rng = random.Random(str(seed))
+    rng.shuffle(templates)
+    selected = templates[:count]
+    materials = list(_HOLDOUT_MATERIALS)
+    rng.shuffle(materials)
+    seed_slug = _agent_benchmark_slug(str(seed), fallback="seed")
+    cases: list[AgentBenchmarkCaseSpec] = []
+    for index, template in enumerate(selected, start=1):
+        material_id, material_name = materials[(index - 1) % len(materials)]
+        cases.append(
+            AgentBenchmarkCaseSpec(
+                identifier=f"holdout_{seed_slug}_{index:02d}_{material_id}_{template.identifier}",
+                mode="repair",
+                request=(
+                    f"Repair randomized holdout failure `{template.breakage}` in the generated "
+                    f"{material_name} mod, then rerun audit."
+                ),
+                setup_request=_agent_benchmark_holdout_setup_request(
+                    setup_kind=template.setup_kind,
+                    material_id=material_id,
+                    material_name=material_name,
+                ),
+                breakage=template.breakage,
+                max_iterations=7,
+                rag_mode="auto",
+                category=template.category,
+                expected_issue_prefixes=list(template.expected_issue_prefixes),
+                expected_repair_strategy=template.expected_repair_strategy,
+            )
+        )
+    return cases
+
+
+def _agent_benchmark_holdout_templates() -> tuple[AgentBenchmarkHoldoutTemplate, ...]:
+    return (
+        AgentBenchmarkHoldoutTemplate("delete_mods_toml", "delete_mods_toml", "metadata", "item", ("project:mods_toml",), "structured_patch"),
+        AgentBenchmarkHoldoutTemplate("break_pack_mcmeta_format", "break_pack_mcmeta_format", "metadata", "item", ("project:pack_mcmeta:pack_format",), "structured_patch"),
+        AgentBenchmarkHoldoutTemplate("corrupt_pack_mcmeta_json", "corrupt_pack_mcmeta_json", "metadata", "item", ("project:pack_mcmeta:json",), "regenerate_managed_files"),
+        AgentBenchmarkHoldoutTemplate("delete_item_definition", "delete_item_definition", "asset_resource", "item", ("item:",), "regenerate_managed_files"),
+        AgentBenchmarkHoldoutTemplate("delete_item_model", "delete_item_model", "asset_resource", "item", ("item:",), "regenerate_managed_files"),
+        AgentBenchmarkHoldoutTemplate("corrupt_item_texture_png", "corrupt_item_texture_png", "asset_resource", "item", ("item:",), "regenerate_managed_files"),
+        AgentBenchmarkHoldoutTemplate("delete_blockstate", "delete_blockstate", "asset_resource", "block", ("block:",), "regenerate_managed_files"),
+        AgentBenchmarkHoldoutTemplate("delete_block_loot_table", "delete_block_loot_table", "asset_resource", "block", ("block:",), "regenerate_managed_files"),
+        AgentBenchmarkHoldoutTemplate("remove_lang_entry", "remove_lang_entry", "asset_resource", "item", ("item:",), "regenerate_managed_files"),
+        AgentBenchmarkHoldoutTemplate("delete_recipe_file", "delete_recipe_file", "data_worldgen", "recipe", ("recipe:",), "regenerate_managed_files"),
+        AgentBenchmarkHoldoutTemplate("corrupt_recipe_json", "corrupt_recipe_json", "data_worldgen", "recipe", ("recipe:",), "regenerate_managed_files"),
+        AgentBenchmarkHoldoutTemplate("break_recipe_reference", "break_recipe_reference", "data_worldgen", "recipe", ("recipe:",), "structured_patch"),
+        AgentBenchmarkHoldoutTemplate("delete_ore_configured_feature", "delete_ore_configured_feature", "data_worldgen", "ore", ("ore:",), "regenerate_managed_files"),
+        AgentBenchmarkHoldoutTemplate("break_ore_rule_test", "break_ore_rule_test", "data_worldgen", "ore", ("ore:",), "regenerate_managed_files"),
+        AgentBenchmarkHoldoutTemplate("delete_ore_biome_modifier", "delete_ore_biome_modifier", "data_worldgen", "ore", ("ore:",), "regenerate_managed_files"),
+        AgentBenchmarkHoldoutTemplate("delete_behavior_item_java", "delete_behavior_item_java", "generated_code", "behavior_item", ("item:",), "regenerate_managed_files"),
+        AgentBenchmarkHoldoutTemplate("delete_machine_block_entity_java", "delete_machine_block_entity_java", "generated_code", "machine", ("machine:",), "regenerate_managed_files"),
+        AgentBenchmarkHoldoutTemplate("delete_entity_spawn_modifier", "delete_entity_spawn_modifier", "generated_code", "entity", ("entity:",), "regenerate_managed_files"),
+    )
+
+
+def _agent_benchmark_holdout_setup_request(*, setup_kind: str, material_id: str, material_name: str) -> str:
+    mod_id = f"{material_id}_holdout"
+    feature_notes = {
+        "item": f"Include item {material_id}.",
+        "block": f"Include item {material_id} and block {material_id}_block.",
+        "recipe": f"Include item {material_id}, block {material_id}_block, sword {material_id}_sword, and recipes.",
+        "ore": (
+            f"Include item {material_id} and ore {material_id}_ore that drops {material_id} "
+            "and generates in the overworld underground with Y -64 to 32, vein size 6, count 4."
+        ),
+        "behavior_item": f"Include behavior item {material_id}_charm with right click heal 4 health and cooldown 20 seconds.",
+        "machine": f"Include item {material_id} and machine {material_id}_compressor with machine cost and energy cost.",
+        "entity": f"Include item {material_id}_scale and entity {material_id}_sentinel with melee attack, drops, and overworld spawn.",
+    }
+    note = feature_notes.get(setup_kind, feature_notes["item"])
+    return (
+        f"Create a {material_name} randomized holdout NeoForge mod. "
+        f"mod id: {mod_id}. package: com.generated.{mod_id}. "
+        f"Holdout material: {material_id}. Holdout features: {setup_kind}. {note}"
+    )
+
+
+def _agent_benchmark_slug(value: str, *, fallback: str) -> str:
+    slug = re.sub(r"[^a-z0-9_]+", "_", value.lower()).strip("_")
+    return (slug or fallback)[:40]
+
+
 class AgentBenchmarkRunner:
     """Run real agent develop/repair loops and aggregate trace-backed metrics."""
 
@@ -291,6 +445,9 @@ class AgentBenchmarkRunner:
         rag_ablation: bool = False,
         run_real: bool = False,
         require_real: bool = False,
+        repair_holdout: bool = False,
+        holdout_seed: str | int = "default",
+        holdout_limit: int = 8,
     ) -> AgentBenchmarkResult:
         run_id = run_name or datetime.now().strftime("%Y%m%d-%H%M%S")
         root_dir = ensure_directory(self.config.workspace_root / "benchmark-runs" / run_id)
@@ -334,7 +491,29 @@ class AgentBenchmarkRunner:
         scoped_config = replace(self.config, workspace_root=ensure_directory(root_dir / "runs"))
         orchestrator = AgentOrchestrator(scoped_config)
         repair_runner = AutoRepairRunner(scoped_config)
-        cases = self._load_cases(cases_path, eval_limit=eval_limit, repair_limit=repair_limit)
+        metrics_extra: dict[str, Any] = {}
+        if repair_holdout:
+            if cases_path is not None:
+                errors.append("--repair-holdout cannot be combined with --suite.")
+                return self._write_agent_result(
+                    success=False,
+                    run_id=run_id,
+                    report_dir=report_dir,
+                    cases=[],
+                    warnings=warnings,
+                    errors=errors,
+                )
+            cases = generate_agent_benchmark_holdout_cases(seed=holdout_seed, limit=holdout_limit)
+            metrics_extra.update(
+                {
+                    "repair_holdout": True,
+                    "holdout_seed": str(holdout_seed),
+                    "holdout_limit": len(cases),
+                }
+            )
+            warnings.append(f"Generated randomized repair holdout suite with seed `{holdout_seed}` and {len(cases)} case(s).")
+        else:
+            cases = self._load_cases(cases_path, eval_limit=eval_limit, repair_limit=repair_limit)
         if rag_ablation:
             cases = _paired_rag_ablation_cases(cases)
 
@@ -377,6 +556,7 @@ class AgentBenchmarkRunner:
             cases=results,
             warnings=warnings,
             errors=errors,
+            metrics_extra=metrics_extra,
         )
 
     def _write_agent_result(
@@ -388,8 +568,11 @@ class AgentBenchmarkRunner:
         cases: list[AgentBenchmarkCaseResult],
         warnings: list[str],
         errors: list[str],
+        metrics_extra: dict[str, Any] | None = None,
     ) -> AgentBenchmarkResult:
         metrics = agent_benchmark_metrics(cases)
+        if metrics_extra:
+            metrics.update(metrics_extra)
         result = AgentBenchmarkResult(
             success=success,
             run_id=run_id,
@@ -444,24 +627,33 @@ class AgentBenchmarkRunner:
                 breakage="delete_mods_toml",
                 max_iterations=6,
                 rag_mode="auto",
+                category="metadata",
+                expected_issue_prefixes=["project:mods_toml", "summary:"],
+                expected_repair_strategy="structured_patch",
             ),
             AgentBenchmarkCaseSpec(
                 identifier="repair_pack_mcmeta_agentic_rag",
                 mode="repair",
                 request="Fix pack.mcmeta audit failures using cited NeoForge metadata rules.",
                 setup_request="Create a ruby mod with ruby.",
-                breakage="break_pack_mcmeta",
+                breakage="break_pack_mcmeta_format",
                 max_iterations=6,
                 rag_mode="auto",
+                category="metadata",
+                expected_issue_prefixes=["project:pack_mcmeta:pack_format"],
+                expected_repair_strategy="structured_patch",
             ),
             AgentBenchmarkCaseSpec(
                 identifier="repair_recipe_resource_path_agentic_rag",
                 mode="repair",
                 request="Fix recipe/resource path audit failures with RAG-backed evidence.",
                 setup_request="Create a ruby mod with ruby sword recipes.",
-                breakage="break_recipe_json",
+                breakage="break_recipe_reference",
                 max_iterations=6,
                 rag_mode="auto",
+                category="data_worldgen",
+                expected_issue_prefixes=["recipe:"],
+                expected_repair_strategy="structured_patch",
             )
         ]
         return [
@@ -509,7 +701,25 @@ class AgentBenchmarkRunner:
             )
             if setup.workspace is None or not setup.success:
                 return _failed_agent_benchmark_case(case, setup, "Repair benchmark setup generation failed.")
-            _inject_agent_benchmark_breakage(setup.workspace, case.breakage)
+            injection = _inject_agent_benchmark_breakage(setup.workspace, case.breakage)
+            initial_audit = repair_runner.auditor.audit_workspace(setup.workspace)
+            initial_issue_ids = [issue.id for issue in initial_audit.errors]
+            detected_expected = _matches_issue_prefixes(initial_issue_ids, case.expected_issue_prefixes)
+            if initial_audit.success:
+                return AgentBenchmarkCaseResult(
+                    identifier=case.identifier,
+                    mode=case.mode,
+                    request=case.request,
+                    success=False,
+                    workspace=str(setup.workspace),
+                    breakage=case.breakage,
+                    category=case.category,
+                    injected_paths=list(injection.injected_paths),
+                    initial_audit_issue_ids=initial_issue_ids,
+                    detected_expected_failure=detected_expected,
+                    rag_mode=case.rag_mode or rag_mode,
+                    errors=["Breakage injection did not produce an audit failure."],
+                )
             regen_probe = repair_runner.run(setup.workspace, max_attempts=1, run_build=run_build, run_audit=run_audit)
             _inject_agent_benchmark_breakage(setup.workspace, case.breakage)
             run = orchestrator.run_repair(
@@ -522,7 +732,21 @@ class AgentBenchmarkRunner:
                 run_audit=run_audit,
                 rag_mode=rag_mode,
             )
-            return _agent_benchmark_case_from_run(case, run, managed_regen_probe=regen_probe.to_dict())
+            result = _agent_benchmark_case_from_run(
+                case,
+                run,
+                managed_regen_probe=regen_probe.to_dict(),
+                injected_paths=injection.injected_paths,
+                initial_audit_issue_ids=initial_issue_ids,
+                detected_expected_failure=detected_expected,
+            )
+            if case.expected_issue_prefixes and not detected_expected:
+                result.success = False
+                result.errors.append(
+                    "Initial audit did not match expected issue prefixes: "
+                    + ", ".join(case.expected_issue_prefixes)
+                )
+            return result
 
         raise ValueError(f"Unsupported agent benchmark mode: {case.mode}")
 
@@ -545,8 +769,13 @@ class AgentBenchmarkRunner:
                     f"### {case.identifier}",
                     "",
                     f"- mode: `{case.mode}`",
+                    f"- category: `{case.category}`",
+                    f"- breakage: `{case.breakage}`",
                     f"- success: `{str(case.success).lower()}`",
                     f"- workspace: `{case.workspace or ''}`",
+                    f"- injected paths: `{', '.join(case.injected_paths)}`",
+                    f"- initial audit issue ids: `{', '.join(case.initial_audit_issue_ids)}`",
+                    f"- detected expected failure: `{case.detected_expected_failure}`",
                     f"- agent run: `{case.agent_run_json_path or ''}`",
                     f"- tool trace: `{case.tool_call_trace_json_path or ''}`",
                     f"- reviewer: `{case.reviewer_report_json_path or ''}`",
@@ -579,8 +808,9 @@ class AgentBenchmarkRunner:
             status = "pass" if case.success else "fail"
             rows.append(
                 "<tr>"
-                f"<td><code>{escape(case.identifier)}</code><br>{escape(case.mode)}</td>"
+                f"<td><code>{escape(case.identifier)}</code><br>{escape(case.mode)}<br>{escape(case.category)}<br><code>{escape(case.breakage)}</code></td>"
                 f'<td><span class="badge {status}">{status}</span></td>'
+                f"<td>{escape(str(case.detected_expected_failure))}<br><code>{escape(', '.join(case.initial_audit_issue_ids[:3]))}</code></td>"
                 f"<td>{case.tool_calls_count}</td>"
                 f"<td>{case.iterations}</td>"
                 f"<td><code>{escape(case.rag_mode)}</code><br>{case.rag_hits_count} hits<br>{case.rag_citations_count} citations</td>"
@@ -624,7 +854,7 @@ class AgentBenchmarkRunner:
     </section>
     <h2>Cases</h2>
     <table>
-      <tr><th>Case</th><th>Status</th><th>Tool Calls</th><th>Iterations</th><th>RAG Hits</th><th>Patch</th><th>Trace</th></tr>
+      <tr><th>Case</th><th>Status</th><th>Initial Detection</th><th>Tool Calls</th><th>Iterations</th><th>RAG Hits</th><th>Patch</th><th>Trace</th></tr>
       {''.join(rows)}
     </table>
   </main>
@@ -639,6 +869,8 @@ class AgentBenchmarkRunner:
             "repair_success_rate",
             "avg_tool_calls",
             "patch_accept_rate",
+            "audit_detection_rate",
+            "expected_failure_detection_rate",
             "rollback_count",
             "rag_hit_rate",
             "rag_citation_coverage_rate",
@@ -647,6 +879,7 @@ class AgentBenchmarkRunner:
             "rag_off_success_rate",
             "rag_iteration_delta",
             "rag_tool_call_delta",
+            "rag_on_expected_detection_rate",
             "failed_cases_count",
             "trace_paths_count",
         ]
@@ -1147,11 +1380,18 @@ def agent_benchmark_metrics(cases: list[AgentBenchmarkCaseResult]) -> dict[str, 
     trace_paths = _unique_strings(path for case in cases for path in case.trace_paths)
     rag_on = [case for case in cases if case.rag_mode == "on"]
     rag_off = [case for case in cases if case.rag_mode == "off"]
+    injection_cases = [case for case in cases if case.breakage]
+    expected_detection_cases = [case for case in cases if case.detected_expected_failure is not None]
     rag_citation_coverages = [case.rag_citation_coverage for case in cases if case.patch_attempts_count > 0]
     failed_cases = [
         {
             "id": case.identifier,
             "mode": case.mode,
+            "breakage": case.breakage,
+            "category": case.category,
+            "failure_kind": case.failure_kind,
+            "provider_status_code": case.provider_status_code,
+            "provider_error_summary": case.provider_error_summary,
             "workspace": case.workspace,
             "errors": list(case.errors) or ["agent benchmark case failed"],
             "agent_run_json_path": case.agent_run_json_path,
@@ -1176,8 +1416,18 @@ def agent_benchmark_metrics(cases: list[AgentBenchmarkCaseResult]) -> dict[str, 
         "patch_attempts_count": patch_attempts,
         "patch_accepted_count": patch_accepted,
         "rollback_count": sum(case.rollback_count for case in cases),
+        "audit_detection_rate": _rate(sum(1 for case in injection_cases if case.initial_audit_issue_ids), len(injection_cases)),
+        "expected_failure_detection_rate": _rate(
+            sum(1 for case in expected_detection_cases if case.detected_expected_failure is True),
+            len(expected_detection_cases),
+        ),
+        "cases_by_category": _case_counts_by_category(cases),
         "failed_cases": failed_cases,
         "failed_cases_count": len(failed_cases),
+        "provider_error_count": sum(1 for case in cases if case.provider_error_summary),
+        "provider_error_cases_count": len([case for case in cases if case.provider_error_summary]),
+        "repair_logic_failure_count": sum(1 for case in cases if case.failure_kind == "repair_logic_failure"),
+        "rag_on_repair_logic_failure_count": sum(1 for case in cases if case.rag_mode == "on" and case.failure_kind == "repair_logic_failure"),
         "trace_paths": trace_paths,
         "trace_paths_count": len(trace_paths),
     }
@@ -1190,6 +1440,7 @@ def agent_benchmark_metrics(cases: list[AgentBenchmarkCaseResult]) -> dict[str, 
         rag_off_iterations = _avg([case.iterations for case in rag_off if case.iterations > 0])
         rag_on_tools = _avg([case.tool_calls_count for case in rag_on if case.tool_calls_count > 0])
         rag_off_tools = _avg([case.tool_calls_count for case in rag_off if case.tool_calls_count > 0])
+        rag_on_detection = [case for case in rag_on if case.detected_expected_failure is not None]
         metrics.update(
             {
                 "rag_on_success_rate": rag_on_success,
@@ -1203,9 +1454,108 @@ def agent_benchmark_metrics(cases: list[AgentBenchmarkCaseResult]) -> dict[str, 
                 "rag_success_delta": round(rag_on_success - rag_off_success, 4),
                 "rag_iteration_delta": round(rag_off_iterations - rag_on_iterations, 4),
                 "rag_tool_call_delta": round(rag_off_tools - rag_on_tools, 4),
+                "rag_on_expected_detection_rate": _rate(
+                    sum(1 for case in rag_on_detection if case.detected_expected_failure is True),
+                    len(rag_on_detection),
+                ),
             }
         )
     return metrics
+
+
+def _provider_error_from_agent_run(
+    run: AgentRunResult,
+    tool_trace: list[dict[str, Any]],
+    repair_payload: dict[str, Any],
+    errors: list[str],
+) -> dict[str, Any]:
+    for entry in tool_trace:
+        if not isinstance(entry, dict):
+            continue
+        observation = entry.get("observation") if isinstance(entry.get("observation"), dict) else {}
+        candidate = _provider_error_from_mapping(observation)
+        if candidate:
+            return candidate
+        completion = entry.get("completion") if isinstance(entry.get("completion"), dict) else {}
+        candidate = _provider_error_from_mapping(completion)
+        if candidate:
+            return candidate
+    candidate = _provider_error_from_mapping(repair_payload)
+    if candidate:
+        return candidate
+    for trace in run.prompt_traces:
+        completion_usage = getattr(trace, "completion_usage", {})
+        if isinstance(completion_usage, dict):
+            candidate = _provider_error_from_mapping(completion_usage)
+            if candidate:
+                return candidate
+        error_text = str(getattr(trace, "error", "") or "")
+        candidate = _provider_error_from_text(error_text)
+        if candidate:
+            return candidate
+    for text in errors:
+        candidate = _provider_error_from_text(str(text))
+        if candidate:
+            return candidate
+    return {}
+
+
+def _provider_error_from_mapping(payload: dict[str, Any]) -> dict[str, Any]:
+    provider_error = payload.get("provider_error") if isinstance(payload.get("provider_error"), dict) else {}
+    if provider_error:
+        return {
+            "summary": str(provider_error.get("message") or payload.get("summary") or "LLM provider request failed."),
+            "status_code": _int_or_none(provider_error.get("status_code")),
+        }
+    summary = str(payload.get("summary") or payload.get("error") or "")
+    if "LLM provider" in summary or "provider request failed" in summary:
+        return {
+            "summary": summary,
+            "status_code": _int_or_none(payload.get("provider_status_code")) or _status_code_from_text(summary),
+        }
+    return {}
+
+
+def _provider_error_from_text(text: str) -> dict[str, Any]:
+    if not text or ("LLM provider" not in text and "provider request failed" not in text):
+        return {}
+    return {
+        "summary": text,
+        "status_code": _status_code_from_text(text),
+    }
+
+
+def _status_code_from_text(text: str) -> int | None:
+    match = re.search(r"HTTP\s+(\d{3})", text)
+    return int(match.group(1)) if match else None
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _classify_agent_benchmark_failure(
+    *,
+    success: bool,
+    repair_success: bool | None,
+    build_payload: dict[str, Any],
+    audit_payload: dict[str, Any],
+    provider_error: dict[str, Any],
+) -> str:
+    if success:
+        return ""
+    if provider_error:
+        return "provider_error"
+    if repair_success is False:
+        return "repair_logic_failure"
+    if (build_payload.get("attempted") and build_payload.get("success") is False) or (
+        audit_payload.get("attempted") and audit_payload.get("success") is False
+    ):
+        return "gate_failure"
+    return "unknown"
 
 
 def _agent_benchmark_case_from_run(
@@ -1213,6 +1563,9 @@ def _agent_benchmark_case_from_run(
     run: AgentRunResult,
     *,
     managed_regen_probe: dict[str, Any] | None = None,
+    injected_paths: list[str] | None = None,
+    initial_audit_issue_ids: list[str] | None = None,
+    detected_expected_failure: bool | None = None,
 ) -> AgentBenchmarkCaseResult:
     payload = run.payload or {}
     repair_payload = payload.get("repair") if isinstance(payload.get("repair"), dict) else {}
@@ -1275,6 +1628,14 @@ def _agent_benchmark_case_from_run(
     repair_success = None
     if repair_payload.get("attempted"):
         repair_success = bool(repair_payload.get("success"))
+    provider_error = _provider_error_from_agent_run(run, tool_trace, repair_payload, errors)
+    failure_kind = _classify_agent_benchmark_failure(
+        success=bool(run.success),
+        repair_success=repair_success,
+        build_payload=build_payload,
+        audit_payload=audit_payload,
+        provider_error=provider_error,
+    )
 
     return AgentBenchmarkCaseResult(
         identifier=case.identifier,
@@ -1282,6 +1643,11 @@ def _agent_benchmark_case_from_run(
         request=case.request,
         success=bool(run.success),
         workspace=str(run.workspace) if run.workspace else None,
+        breakage=case.breakage,
+        category=case.category,
+        injected_paths=list(injected_paths or []),
+        initial_audit_issue_ids=list(initial_audit_issue_ids or []),
+        detected_expected_failure=detected_expected_failure,
         agent_run_json_path=str(run.agent_run_json_path) if run.agent_run_json_path else None,
         tool_call_trace_json_path=str(run.tool_call_trace_json_path) if run.tool_call_trace_json_path else None,
         reviewer_report_json_path=str(run.reviewer_report_json_path) if run.reviewer_report_json_path else None,
@@ -1308,6 +1674,9 @@ def _agent_benchmark_case_from_run(
         rag_citations_count=len(rag_citation_ids),
         rag_citation_coverage=citation_coverage(tool_trace),
         trace_paths=trace_paths,
+        failure_kind=failure_kind,
+        provider_status_code=provider_error.get("status_code"),
+        provider_error_summary=str(provider_error.get("summary") or ""),
         errors=errors,
     )
 
@@ -1320,36 +1689,204 @@ def _failed_agent_benchmark_case(
     result = _agent_benchmark_case_from_run(case, run)
     result.success = False
     result.errors.append(message)
+    provider_error = _provider_error_from_text(message)
+    if provider_error:
+        result.failure_kind = "provider_error"
+        result.provider_status_code = provider_error.get("status_code")
+        result.provider_error_summary = str(provider_error.get("summary") or "")
+    elif not result.failure_kind:
+        result.failure_kind = "gate_failure"
     return result
 
 
-def _inject_agent_benchmark_breakage(workspace: Path, breakage: str) -> None:
-    if breakage in {"", "delete_mods_toml"}:
-        target = workspace / "src" / "main" / "templates" / "META-INF" / "neoforge.mods.toml"
-        if target.exists():
-            target.unlink()
-        return
-    if breakage == "break_pack_mcmeta":
-        target = workspace / "src" / "main" / "resources" / "pack.mcmeta"
-        text = target.read_text(encoding="utf-8")
-        target.write_text(text.replace('"pack_format": 61', '"pack_format": "BROKEN"'), encoding="utf-8")
-        return
-    if breakage == "break_recipe_json":
-        recipe = next((workspace / "src" / "main" / "resources" / "data").glob("*/recipe/*.json"), None)
-        if recipe is None:
-            raise ValueError("No generated recipe JSON was available for break_recipe_json.")
-        text = recipe.read_text(encoding="utf-8")
-        changed = False
-        for candidate in ("ruby_mod:ruby", "ruby_mod:ruby_sword", "ruby_mod:ruby_block"):
-            if candidate in text:
-                text = text.replace(candidate, "ruby_mod:missing_agentic_rag_material", 1)
-                changed = True
-                break
-        if not changed:
-            raise ValueError(f"Could not find a local recipe reference to break in {recipe}.")
-        recipe.write_text(text, encoding="utf-8")
-        return
-    raise ValueError(f"Unsupported agent benchmark breakage: {breakage}")
+def _inject_agent_benchmark_breakage(workspace: Path, breakage: str) -> AgentBenchmarkBreakageInjection:
+    normalized = _normalize_breakage(breakage)
+    handlers = _agent_benchmark_breakage_registry()
+    handler = handlers.get(normalized)
+    if handler is None:
+        raise ValueError(f"Unsupported agent benchmark breakage: {breakage}")
+    workspace = workspace.resolve()
+    spec = _load_agent_benchmark_modspec(workspace)
+    paths = handler(workspace, spec)
+    if not paths:
+        raise ValueError(f"Agent benchmark breakage injected no files: {breakage}")
+    return AgentBenchmarkBreakageInjection(
+        breakage=normalized,
+        injected_paths=[_workspace_relative_path(workspace, path) for path in paths],
+    )
+
+
+def _agent_benchmark_breakage_registry() -> dict[str, Any]:
+    return {
+        "delete_mods_toml": _break_delete_mods_toml,
+        "break_pack_mcmeta_format": _break_pack_mcmeta_format,
+        "corrupt_pack_mcmeta_json": _break_corrupt_pack_mcmeta_json,
+        "delete_item_definition": _break_delete_item_definition,
+        "delete_item_model": _break_delete_item_model,
+        "corrupt_item_texture_png": _break_corrupt_item_texture_png,
+        "delete_blockstate": _break_delete_blockstate,
+        "delete_block_loot_table": _break_delete_block_loot_table,
+        "remove_lang_entry": _break_remove_lang_entry,
+        "delete_recipe_file": _break_delete_recipe_file,
+        "corrupt_recipe_json": _break_corrupt_recipe_json,
+        "break_recipe_reference": _break_recipe_reference,
+        "delete_ore_configured_feature": _break_delete_ore_configured_feature,
+        "break_ore_rule_test": _break_ore_rule_test,
+        "delete_ore_biome_modifier": _break_delete_ore_biome_modifier,
+        "delete_behavior_item_java": _break_delete_behavior_item_java,
+        "delete_machine_block_entity_java": _break_delete_machine_block_entity_java,
+        "delete_entity_spawn_modifier": _break_delete_entity_spawn_modifier,
+    }
+
+
+def _normalize_breakage(breakage: str) -> str:
+    normalized = str(breakage or "delete_mods_toml").strip()
+    aliases = {
+        "": "delete_mods_toml",
+        "break_pack_mcmeta": "break_pack_mcmeta_format",
+        "break_recipe_json": "break_recipe_reference",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _break_delete_mods_toml(workspace: Path, spec: ModSpec) -> list[Path]:
+    return [_delete_or_mark(workspace, workspace / "src" / "main" / "templates" / "META-INF" / "neoforge.mods.toml")]
+
+
+def _break_pack_mcmeta_format(workspace: Path, spec: ModSpec) -> list[Path]:
+    target = _safe_workspace_path(workspace, workspace / "src" / "main" / "resources" / "pack.mcmeta")
+    text = target.read_text(encoding="utf-8")
+    if '"pack_format": 61' in text:
+        text = text.replace('"pack_format": 61', '"pack_format": "BROKEN"', 1)
+    else:
+        text = text.replace('"pack_format":', '"pack_format_broken":', 1)
+    target.write_text(text, encoding="utf-8")
+    return [target]
+
+
+def _break_corrupt_pack_mcmeta_json(workspace: Path, spec: ModSpec) -> list[Path]:
+    target = _safe_workspace_path(workspace, workspace / "src" / "main" / "resources" / "pack.mcmeta")
+    target.write_text('{"pack": {"description": "broken", "pack_format": 61,,}}\n', encoding="utf-8")
+    return [target]
+
+
+def _break_delete_item_definition(workspace: Path, spec: ModSpec) -> list[Path]:
+    identifier = _first_item_like_id(spec)
+    return [_delete_or_mark(workspace, workspace / "src" / "main" / "resources" / "assets" / spec.mod_id / "items" / f"{identifier}.json")]
+
+
+def _break_delete_item_model(workspace: Path, spec: ModSpec) -> list[Path]:
+    identifier = _first_item_like_id(spec)
+    return [_delete_or_mark(workspace, workspace / "src" / "main" / "resources" / "assets" / spec.mod_id / "models" / "item" / f"{identifier}.json")]
+
+
+def _break_corrupt_item_texture_png(workspace: Path, spec: ModSpec) -> list[Path]:
+    identifier = _first_item_like_id(spec)
+    target = _safe_workspace_path(workspace, workspace / "src" / "main" / "resources" / "assets" / spec.mod_id / "textures" / "item" / f"{identifier}.png")
+    target.write_bytes(b"not-a-png\n")
+    return [target]
+
+
+def _break_delete_blockstate(workspace: Path, spec: ModSpec) -> list[Path]:
+    identifier = _first_block_like_id(spec)
+    return [_delete_or_mark(workspace, workspace / "src" / "main" / "resources" / "assets" / spec.mod_id / "blockstates" / f"{identifier}.json")]
+
+
+def _break_delete_block_loot_table(workspace: Path, spec: ModSpec) -> list[Path]:
+    identifier = _first_block_like_id(spec)
+    return [_delete_or_mark(workspace, workspace / "src" / "main" / "resources" / "data" / spec.mod_id / "loot_table" / "blocks" / f"{identifier}.json")]
+
+
+def _break_remove_lang_entry(workspace: Path, spec: ModSpec) -> list[Path]:
+    target = _safe_workspace_path(workspace, workspace / "src" / "main" / "resources" / "assets" / spec.mod_id / "lang" / "en_us.json")
+    data = json.loads(target.read_text(encoding="utf-8"))
+    key = f"item.{spec.mod_id}.{_first_item_like_id(spec)}"
+    if key not in data:
+        key = f"block.{spec.mod_id}.{_first_block_like_id(spec)}"
+    data.pop(key, None)
+    write_json(target, data)
+    return [target]
+
+
+def _break_delete_recipe_file(workspace: Path, spec: ModSpec) -> list[Path]:
+    recipe = _first_recipe_id(spec)
+    return [_delete_or_mark(workspace, workspace / "src" / "main" / "resources" / "data" / spec.mod_id / "recipe" / f"{recipe}.json")]
+
+
+def _break_corrupt_recipe_json(workspace: Path, spec: ModSpec) -> list[Path]:
+    recipe = _first_recipe_id(spec)
+    target = _safe_workspace_path(workspace, workspace / "src" / "main" / "resources" / "data" / spec.mod_id / "recipe" / f"{recipe}.json")
+    target.write_text('{"type": "minecraft:crafting_shaped", "key": }\n', encoding="utf-8")
+    return [target]
+
+
+def _break_recipe_reference(workspace: Path, spec: ModSpec) -> list[Path]:
+    recipe = _first_recipe_id(spec)
+    target = _safe_workspace_path(workspace, workspace / "src" / "main" / "resources" / "data" / spec.mod_id / "recipe" / f"{recipe}.json")
+    data = json.loads(target.read_text(encoding="utf-8"))
+    bad_reference = f"{spec.mod_id}:missing_agentic_rag_material"
+    if isinstance(data.get("key"), dict) and data["key"]:
+        first_key = next(iter(data["key"]))
+        data["key"][first_key] = bad_reference
+    elif isinstance(data.get("ingredients"), list) and data["ingredients"]:
+        data["ingredients"][0] = bad_reference
+    else:
+        data["result"] = {"id": bad_reference, "count": 1}
+    write_json(target, data)
+    return [target]
+
+
+def _break_delete_ore_configured_feature(workspace: Path, spec: ModSpec) -> list[Path]:
+    ore = _first_ore_id(spec)
+    return [_delete_or_mark(workspace, workspace / "src" / "main" / "resources" / "data" / spec.mod_id / "worldgen" / "configured_feature" / f"{ore}.json")]
+
+
+def _break_ore_rule_test(workspace: Path, spec: ModSpec) -> list[Path]:
+    ore = _first_ore_id(spec)
+    target = _safe_workspace_path(workspace, workspace / "src" / "main" / "resources" / "data" / spec.mod_id / "worldgen" / "configured_feature" / f"{ore}.json")
+    data = json.loads(target.read_text(encoding="utf-8"))
+    data["config"]["targets"][0]["target"] = "minecraft:stone_ore_replaceables"
+    write_json(target, data)
+    return [target]
+
+
+def _break_delete_ore_biome_modifier(workspace: Path, spec: ModSpec) -> list[Path]:
+    ore = _first_ore_id(spec)
+    return [_delete_or_mark(workspace, workspace / "src" / "main" / "resources" / "data" / spec.mod_id / "neoforge" / "biome_modifier" / f"add_{ore}.json")]
+
+
+def _break_delete_behavior_item_java(workspace: Path, spec: ModSpec) -> list[Path]:
+    item = next((item for item in spec.items if item.behavior is not None), None)
+    if item is None:
+        raise ValueError("No generated behavior item was available.")
+    class_name = "".join(part.capitalize() for part in item.identifier.split("_")) + "Item"
+    return [_delete_or_mark(workspace, workspace / "src" / "main" / "java" / Path(*spec.package_name.split(".")) / "item" / f"{class_name}.java")]
+
+
+def _break_delete_machine_block_entity_java(workspace: Path, spec: ModSpec) -> list[Path]:
+    if not spec.machines:
+        raise ValueError("No generated machine was available.")
+    base_name = "".join(part.capitalize() for part in spec.machines[0].identifier.split("_"))
+    return [
+        _delete_or_mark(
+            workspace,
+            workspace
+            / "src"
+            / "main"
+            / "java"
+            / Path(*spec.package_name.split("."))
+            / "block"
+            / "entity"
+            / f"{base_name}BlockEntity.java",
+        )
+    ]
+
+
+def _break_delete_entity_spawn_modifier(workspace: Path, spec: ModSpec) -> list[Path]:
+    entity = next((entity for entity in spec.entities if entity.spawn is not None and entity.spawn.enabled), None)
+    if entity is None:
+        raise ValueError("No generated spawning entity was available.")
+    return [_delete_or_mark(workspace, workspace / "src" / "main" / "resources" / "data" / spec.mod_id / "neoforge" / "biome_modifier" / f"add_{entity.identifier}.json")]
 
 
 def _paired_rag_ablation_cases(cases: list[AgentBenchmarkCaseSpec]) -> list[AgentBenchmarkCaseSpec]:
@@ -1365,6 +1902,9 @@ def _paired_rag_ablation_cases(cases: list[AgentBenchmarkCaseSpec]) -> list[Agen
                     breakage=case.breakage,
                     max_iterations=case.max_iterations,
                     rag_mode=mode,
+                    category=case.category,
+                    expected_issue_prefixes=list(case.expected_issue_prefixes),
+                    expected_repair_strategy=case.expected_repair_strategy,
                 )
             )
     return paired
@@ -1395,6 +1935,66 @@ def _rollback_evidence_paths(workspace: Path | None, repair_payload: dict[str, A
     return _unique_strings(path for path in paths if path)
 
 
+def _load_agent_benchmark_modspec(workspace: Path) -> ModSpec:
+    path = workspace / ".agent" / "modspec.json"
+    if not path.exists():
+        raise FileNotFoundError(f"Missing benchmark modspec: {path}")
+    return ModSpec.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _safe_workspace_path(workspace: Path, path: Path) -> Path:
+    root = workspace.resolve()
+    target = path.resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"Agent benchmark breakage path escapes workspace: {path}") from exc
+    return target
+
+
+def _delete_or_mark(workspace: Path, path: Path) -> Path:
+    target = _safe_workspace_path(workspace, path)
+    if target.exists():
+        target.unlink()
+    return target
+
+
+def _workspace_relative_path(workspace: Path, path: Path) -> str:
+    return _safe_workspace_path(workspace, path).relative_to(workspace.resolve()).as_posix()
+
+
+def _first_item_like_id(spec: ModSpec) -> str:
+    items = list(spec.all_item_like())
+    if not items:
+        raise ValueError("No generated item-like feature was available.")
+    return items[0].identifier
+
+
+def _first_block_like_id(spec: ModSpec) -> str:
+    blocks = [*spec.blocks, *spec.machines, *spec.ores]
+    if not blocks:
+        raise ValueError("No generated block-like feature was available.")
+    return blocks[0].identifier
+
+
+def _first_recipe_id(spec: ModSpec) -> str:
+    if not spec.recipes:
+        raise ValueError("No generated recipe was available.")
+    return spec.recipes[0].identifier
+
+
+def _first_ore_id(spec: ModSpec) -> str:
+    if not spec.ores:
+        raise ValueError("No generated ore was available.")
+    return spec.ores[0].identifier
+
+
+def _matches_issue_prefixes(issue_ids: list[str], prefixes: list[str]) -> bool:
+    if not prefixes:
+        return bool(issue_ids)
+    return any(any(issue_id.startswith(prefix) for prefix in prefixes) for issue_id in issue_ids)
+
+
 def _load_json_list(path: Path | None) -> list[dict[str, Any]]:
     if path is None:
         return []
@@ -1421,10 +2021,28 @@ def _dict_or_empty(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(item) for item in value if item is not None]
+    return []
+
+
 def _limit_cases(cases: list[AgentBenchmarkCaseSpec], limit: int | None) -> list[AgentBenchmarkCaseSpec]:
     if limit is None:
         return list(cases)
     return list(cases[: max(0, int(limit))])
+
+
+def _case_counts_by_category(cases: list[AgentBenchmarkCaseResult]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for case in cases:
+        category = case.category or "uncategorized"
+        counts[category] = counts.get(category, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _unique_strings(items) -> list[str]:

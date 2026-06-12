@@ -14,6 +14,9 @@ from .quality_gate import QualityGateRunner
 from .tools import ensure_directory, write_json, write_text
 
 
+DEVELOPMENT_E2E_CASES = Path("examples") / "agent_development_e2e.json"
+
+
 @dataclass(slots=True)
 class ShowcaseStep:
     name: str
@@ -88,6 +91,7 @@ class ShowcaseRunner:
         steps.append(self._run_agent_generate(scoped_config, planner_mode, llm_provider, run_build))
         steps.append(self._run_agent_modify(scoped_config, planner_mode, llm_provider, run_build))
         steps.append(self._run_eval(run_id, scoped_config, planner_mode, llm_provider, eval_limit))
+        steps.append(self._run_development_e2e(run_id, scoped_config, planner_mode, llm_provider, run_build))
         steps.append(self._run_quality_gate(run_id, scoped_config) if run_quality_gate else self._skip_quality_gate())
 
         success = all(step.status in {"pass", "skip"} for step in steps)
@@ -266,6 +270,60 @@ class ShowcaseRunner:
             errors=[error for case in result.cases for error in case.errors],
         )
 
+    def _run_development_e2e(
+        self,
+        run_id: str,
+        config: AppConfig,
+        planner_mode: str,
+        llm_provider: str,
+        run_build: bool,
+    ) -> ShowcaseStep:
+        result = BenchmarkEvaluator(config).run(
+            cases_path=self.config.project_root / DEVELOPMENT_E2E_CASES,
+            planner_mode=planner_mode,
+            llm_provider=llm_provider,
+            run_build=run_build,
+            run_audit=True,
+            run_name=f"{run_id}-development-e2e",
+        )
+        metrics = dict(result.metrics)
+        build_attempted_count = int(metrics.get("build_attempted_count", 0) or 0)
+        build_success_count = int(metrics.get("build_success_count", 0) or 0)
+        audit_attempted_count = int(metrics.get("audit_attempted_count", 0) or 0)
+        audit_success_count = int(metrics.get("audit_success_count", 0) or 0)
+        repeat_modify_cases = int(metrics.get("repeat_modify_cases", 0) or 0)
+        repeat_modify_success_count = int(metrics.get("repeat_modify_success_count", 0) or 0)
+        metrics.update(
+            {
+                "eval_success": result.success,
+                "audit_success": audit_attempted_count > 0 and audit_success_count == audit_attempted_count,
+                "build_attempted": build_attempted_count > 0,
+                "build_success": (
+                    build_success_count == build_attempted_count
+                    if build_attempted_count > 0
+                    else None
+                ),
+                "repeat_modify_success": (
+                    repeat_modify_success_count == repeat_modify_cases
+                    if repeat_modify_cases > 0
+                    else None
+                ),
+            }
+        )
+        return ShowcaseStep(
+            name="development_e2e",
+            status="pass" if result.success else "fail",
+            summary="Ran the development e2e eval suite for progression generation and repeat-safe worldgen modification.",
+            artifacts={
+                "cases": str(self.config.project_root / DEVELOPMENT_E2E_CASES),
+                "eval_report_json": str(result.eval_report_json_path),
+                "eval_report_md": str(result.eval_report_md_path),
+            },
+            metrics=metrics,
+            warnings=[warning for case in result.cases for warning in case.warnings],
+            errors=[error for case in result.cases for error in case.errors],
+        )
+
     def _run_quality_gate(self, run_id: str, config: AppConfig) -> ShowcaseStep:
         result = QualityGateRunner(config).run(
             run_name=f"{run_id}-quality-gate",
@@ -316,6 +374,7 @@ class ShowcaseRunner:
             "- mock LLM multi-role agent generation",
             "- modify existing workspace with worldgen update",
             "- benchmark eval smoke",
+            "- development e2e eval for progression generation and repeat-safe modification",
             "- optional quality gate",
             "",
             "## Steps",

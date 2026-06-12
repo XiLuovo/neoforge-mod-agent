@@ -1,6 +1,6 @@
 # Capability Harvest Loop
 
-> RC1 定位：Capability Harvest Loop / Free-Code Lab 是辅助实验能力，不是当前推荐 demo 主线。
+> 当前定位：Capability Harvest Loop / Free-Code Lab 是辅助实验能力，不是当前推荐 demo 主线。
 
 ## 用途
 
@@ -15,13 +15,14 @@ generator gap
 -> future ModSpec / DSL / generator / audit / tests
 ```
 
-## 与 RC1 主线的关系
+## 与当前主线的关系
 
-RC1 的主线已经是：
+当前主线已经是：
 
 ```text
 agent develop / repair
 -> real tool-calling loop
+-> Agentic RAG policy / citation trace
 -> structured patch
 -> reviewer
 -> audit/build gate
@@ -41,4 +42,4 @@ Free-Code Lab 只回答另一个问题：如果某个成功修复或实验模式
 
 一句话即可：
 
-> RC1 已经能通过真实 tool-calling loop 修复 workspace；Free-Code Lab 是后续把实验样本沉淀回 generator 的学习通道，不是主线生成路径。
+> 当前项目已经能通过真实 tool-calling loop 和 Agentic RAG 修复 workspace；Free-Code Lab 是后续把实验样本沉淀回 generator 的学习通道，不是主线生成路径。

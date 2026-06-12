@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from dataclasses import replace
@@ -111,6 +112,42 @@ class RepairLoopTests(unittest.TestCase):
             self.assertTrue(result.success)
             self.assertTrue(result.repaired)
             self.assertTrue(texture_path.exists())
+
+    def test_repair_loop_regenerates_broken_ore_rule_test(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+            planner = ModProjectPlanner(config)
+            generation = planner.execute(
+                "Add ruby ore that generates underground in the overworld, Y -64 to 32, vein size 6, 4 per chunk.",
+                workspace_name="repair-loop-ore-rule-test",
+                overwrite=True,
+                run_build=False,
+            )
+            self.assertTrue(generation.succeeded)
+
+            workspace = generation.workspace_dir
+            configured = workspace / "src" / "main" / "resources" / "data" / "ruby_mod" / "worldgen" / "configured_feature" / "ruby_ore.json"
+            payload = json.loads(configured.read_text(encoding="utf-8"))
+            payload["config"]["targets"][0]["target"] = "minecraft:stone_ore_replaceables"
+            configured.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+            broken_audit = WorkspaceAuditor(config).audit_workspace(workspace)
+            self.assertFalse(broken_audit.success)
+            self.assertTrue(any(issue.id == "ore:ruby_ore:configured_rule_test" for issue in broken_audit.errors))
+
+            result = AutoRepairRunner(config).run(
+                workspace,
+                max_attempts=1,
+                run_build=False,
+                run_audit=True,
+            )
+
+            repaired = json.loads(configured.read_text(encoding="utf-8"))
+            rule_test = repaired["config"]["targets"][0]["target"]
+            self.assertTrue(result.success)
+            self.assertTrue(result.repaired)
+            self.assertEqual(rule_test["predicate_type"], "minecraft:tag_match")
+            self.assertEqual(rule_test["tag"], "minecraft:stone_ore_replaceables")
 
 
 if __name__ == "__main__":

@@ -744,14 +744,6 @@ def _feature_ids_from_modspec(data: dict[str, Any]) -> set[str]:
         identifier = feature.get("id", feature.get("identifier"))
         if identifier:
             feature_ids.add(str(identifier))
-    for key in ("items", "blocks", "ores", "foods", "swords", "tools", "armors", "recipes"):
-        entries = data.get(key, [])
-        if isinstance(entries, list):
-            for entry in entries:
-                if isinstance(entry, dict):
-                    identifier = entry.get("id", entry.get("identifier"))
-                    if identifier:
-                        feature_ids.add(str(identifier))
     return feature_ids
 
 
@@ -762,8 +754,28 @@ def _categories_from_modspec(data: dict[str, Any], *, mode: str) -> set[str]:
 
     for feature in _feature_dicts_from_modspec(data):
         feature_type = _normalize_category(str(feature.get("type", "")))
-        if feature_type in {"item", "block", "ore", "food", "sword", "tool", "armor", "recipe"}:
+        if feature_type in _FEATURE_CATEGORY_TYPES:
             categories.add(feature_type)
+        if feature_type == "world_feature":
+            categories.add("worldgen")
+        if feature_type == "loot_pool":
+            categories.add("loot")
+        if feature_type == "machine":
+            categories.add("block")
+            categories.add("block_entity")
+            if feature.get("menu_title") or feature.get("inventory_slots"):
+                categories.add("gui")
+            machine_kind = _normalize_category(str(feature.get("machine_kind", "")))
+            if machine_kind:
+                categories.add(machine_kind)
+        if feature_type == "progression":
+            categories.add("progression_report")
+        if feature_type == "balance_plan":
+            categories.add("balance")
+            categories.add("balance_report")
+        if feature_type == "quest":
+            categories.add("advancement")
+            categories.add("guidebook")
 
         behavior = feature.get("behavior")
         if isinstance(behavior, dict):
@@ -806,16 +818,7 @@ def _feature_dicts_from_modspec(data: dict[str, Any]) -> list[dict[str, Any]]:
         return [feature for feature in features if isinstance(feature, dict)]
 
     result: list[dict[str, Any]] = []
-    for key, feature_type in (
-        ("items", "item"),
-        ("blocks", "block"),
-        ("ores", "ore"),
-        ("foods", "food"),
-        ("swords", "sword"),
-        ("tools", "tool"),
-        ("armors", "armor"),
-        ("recipes", "recipe"),
-    ):
+    for key, feature_type in _FEATURE_COLLECTION_TYPES:
         entries = data.get(key, [])
         if isinstance(entries, list):
             for entry in entries:
@@ -835,6 +838,13 @@ def _normalize_category(value: str) -> str:
         "ore_natural_generation": "worldgen",
         "overworld_ore": "worldgen",
         "overworld_worldgen": "worldgen",
+        "balance": "balance_plan",
+        "balance_planner": "balance_plan",
+        "progression_reports": "progression_report",
+        "questline": "quest",
+        "quests": "quest",
+        "advancements": "advancement",
+        "guide_book": "guidebook",
     }
     return aliases.get(normalized, normalized)
 
@@ -847,3 +857,28 @@ def _rate(numerator: int, denominator: int) -> float:
     if denominator <= 0:
         return 0.0
     return round(numerator / denominator, 4)
+
+
+_FEATURE_COLLECTION_TYPES = (
+    ("items", "item"),
+    ("blocks", "block"),
+    ("machines", "machine"),
+    ("entities", "entity"),
+    ("dimensions", "dimension"),
+    ("biomes", "biome"),
+    ("world_features", "world_feature"),
+    ("structures", "structure"),
+    ("loot_pools", "loot_pool"),
+    ("java_extensions", "java_extension"),
+    ("ores", "ore"),
+    ("foods", "food"),
+    ("swords", "sword"),
+    ("tools", "tool"),
+    ("armors", "armor"),
+    ("recipes", "recipe"),
+    ("progressions", "progression"),
+    ("balance_plans", "balance_plan"),
+    ("quests", "quest"),
+)
+
+_FEATURE_CATEGORY_TYPES = {feature_type for _, feature_type in _FEATURE_COLLECTION_TYPES}

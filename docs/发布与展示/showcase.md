@@ -1,38 +1,45 @@
-# RC1 Showcase
+# Development E2E Showcase
 
-RC1 showcase 的目标是让项目展示为一个可验证、可回放、可评测的领域 Coding Agent。
+当前推荐展示路径是“受控 NeoForge Coding Agent 的端到端开发闭环”，不是继续加厚 RAG/Milvus，也不是把 deterministic repair 包装成核心卖点。
 
 ## 展示顺序
 
-1. 打开 [../总览/rc1-learning-guide.md](../总览/rc1-learning-guide.md)，用 1 分钟说明项目定位。
-2. 运行 `agent develop`，展示 baseline generation 和 tool-call trace。
-3. 运行 `agent repair`，展示 structured patch、snapshot、rollback evidence。
-4. 打开 `.agent/reviewer-report.json`，说明 reviewer 只审查风险，不替代 gate。
-5. 运行 `agent bench`，展示 trace-backed metrics。
-6. 打开 [agent-rc1-showcase.md](agent-rc1-showcase.md)，对比普通 generator 和当前 agent。
+1. 用 `showcase` 跑一键离线演示，先证明 doctor、generate、modify、eval smoke 和 development e2e 都能落盘报告。
+2. 单独跑 `eval --cases examples/agent_development_e2e.json`，展示自然语言需求如何进入 `ModSpec`，再由 generator 产出 Java/JSON/resource，并通过 audit gate 和 trace/report 验收。
+3. 打开 development e2e eval report，重点看 `expected_feature_match_rate`、`expected_category_match_rate`、`audit_success_rate` 和 `repeat_modify_success_rate`。
+4. 如需可靠性补充，再展示 3-case RAG ablation smoke、18-case repair suite 或 seeded holdout。
+5. 明确边界：本轮证明 audit/build 层，不声称 Minecraft runtime 自动验收。
 
 ## 推荐命令
 
 ```powershell
 $env:PYTHONPATH = (Resolve-Path .\src)
-py -3.11 -m agent.cli agent develop "Create a ruby mod with a ruby item, ruby block and ruby ore." --planner llm --llm-provider mock --workspace-name rc1-showcase --no-build --json
-py -3.11 -m agent.cli agent repair rc1-showcase --goal "Fix audit failures using safe structured patches." --planner llm --llm-provider mock --max-iterations 5 --no-build --audit --json
-py -3.11 -m agent.cli agent bench --llm-provider mock --eval-limit 1 --repair-limit 1 --no-build --audit --json
+py -3.11 -m agent.cli showcase --run-name codex-development-e2e-smoke --llm-provider mock --no-build --json
+py -3.11 -m agent.cli eval --cases examples/agent_development_e2e.json --llm-provider mock --audit --no-build --json
+py -3.11 -m agent.cli showcase --run-name codex-development-e2e-build --llm-provider mock --build --json
 ```
 
-## 讲解重点
+`--no-build` 适合快速面试演示；`--build` 更适合本地正式验收，耗时会更长。
 
-- 不是让 LLM 一次性写完整 Mod；
-- planner、generator、tool loop、reviewer、audit/build 各司其职；
-- tool call 和 reviewer 都有真实 JSON evidence；
-- benchmark 读真实 trace，而不是静态报告；
-- Minecraft runtime 仍是边界，不要夸大成自动游戏内验收。
+## Development E2E Suite
 
-## RC2 Agentic RAG Demo
+`examples/agent_development_e2e.json` 当前包含两类 case：
 
-RC2 adds a focused demo path for proving that the project is an agentic repair system, not a one-shot generator.
+- `develop_progression_loop`：从自然语言生成 ruby progression gameplay loop，覆盖 ore/worldgen、compressor machine、ruby tools、recipes 和 progression report。
+- `modify_add_worldgen_repeat`：从已有 ruby mod 出发追加 ruby ore worldgen，并通过 repeat modify 验证同一需求重复执行不会重复添加。
 
-Run the offline RAG ablation benchmark:
+报告中应该重点展示：
+
+- `eval_report_json` / `eval_report_md`
+- expected feature/category match rate
+- audit attempted/success
+- build attempted/success
+- repeat modify success
+- agent trace、prompt trace、audit report
+
+## Repair/RAG 补充
+
+RAG/repair benchmark 到 RC3-candidate 已阶段性冻结。它们仍然有价值，但展示口径应是可靠性补充：
 
 ```powershell
 $env:PYTHONPATH = (Resolve-Path .\src)
@@ -42,41 +49,38 @@ py -3.11 -m agent.cli agent bench `
   --rag-ablation `
   --audit `
   --json
+
+py -3.11 -m agent.cli agent bench `
+  --suite examples/agent_benchmark_repair_18.json `
+  --llm-provider mock `
+  --rag-ablation `
+  --audit `
+  --no-build `
+  --json
+
+py -3.11 -m agent.cli agent bench `
+  --repair-holdout `
+  --holdout-seed demo `
+  --holdout-limit 8 `
+  --llm-provider mock `
+  --rag-ablation `
+  --audit `
+  --no-build `
+  --json
 ```
 
-For each repair case, the benchmark runs paired `rag_on` and `rag_off` versions. The report highlights `rag_success_delta`, `rag_on_success_rate`, `rag_off_success_rate`, and `rag_citation_coverage_rate`.
+讲法要克制：3-case smoke 用来确认 RAG on/off、trace 和 reviewer 没退化；18-case suite 用来覆盖 metadata、asset/resource、data/worldgen 和 generated-code audit 故障；seeded holdout 用来防止只会固定题。不要把 managed-file regeneration 的成功说成 RAG 核心能力。
 
-Best evidence to show:
+## 面试讲法
 
-- one `tool-call-trace.json`
-- one `rag-decision-trace.json`
-- one `reviewer-report.json`
-- `workspace/benchmark-runs/<run-id>/.agent/agent-benchmark-report.json`
-
-The demo story is: the agent observes an audit failure, decides RAG is required, rewrites the query, retrieves multi-hop citations, applies a structured patch with citation ids, reruns audit, and compares the result against a RAG-off control run.
-
-### RC2 Real-Provider Talking Points
-
-For portfolio or interview demos, present RC2 in two layers:
-
-- Controlled mock ablation: proves RAG policy changes behavior and produces stable RAG-on/RAG-off metrics.
-- Real-provider acceptance: proves the same tool-calling loop runs with an OpenAI-compatible provider and produces replayable evidence.
-
-Current complete real-provider evidence:
+一句话版本：
 
 ```text
-workspace/benchmark-runs/rc2-real-ablation-accepted/.agent/agent-benchmark-report.json
-workspace/benchmark-runs/rc2-real-ablation-accepted/.agent/agent-benchmark-report.md
-workspace/benchmark-runs/rc2-real-ablation-accepted/.agent/agent-benchmark-report.html
+这是一个受控领域 coding agent：LLM 负责把自然语言需求转成 ModSpec / patch / tool action，确定性 generator 负责产出 Java、JSON 和资源文件，audit/build/report 负责验收，repair benchmark 负责证明失败可诊断、可分类、可复现。
 ```
 
-Headline result:
+边界版本：
 
 ```text
-6 / 6 paired real-provider cases succeeded
-audit_success_rate = 1.0
-repair_success_rate = 1.0
-rag_citation_coverage_rate = 0.5833
+当前证明的是 workspace 级 audit/build gate，不是自动进游戏 runtime 验收；RAG 是 planner/repair 的上下文和 citation 证据，不是项目主线；real provider 如果失败在连接或 SSL 层，应该归类为 provider_error，而不是 agent 能力失败。
 ```
-
-Important nuance: in this real-provider run, `rag_off` also succeeded because the model could repair the simple injected failures without retrieval. Do not oversell this as "RAG always improves success rate." The stronger claim is that the project now measures the difference, records why retrieval happened, links patches to citations, and can compare RAG-on against RAG-off under the same suite.

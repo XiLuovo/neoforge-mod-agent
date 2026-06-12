@@ -658,6 +658,31 @@ class CliParserTests(unittest.TestCase):
         self.assertTrue(args.audit)
         self.assertTrue(args.json)
 
+    def test_agent_bench_repair_holdout_arguments_parse(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "agent",
+                "bench",
+                "--repair-holdout",
+                "--holdout-seed",
+                "demo-seed",
+                "--holdout-limit",
+                "5",
+                "--rag-ablation",
+                "--no-build",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.command, "agent")
+        self.assertEqual(args.agent_command, "bench")
+        self.assertTrue(args.repair_holdout)
+        self.assertEqual(args.holdout_seed, "demo-seed")
+        self.assertEqual(args.holdout_limit, 5)
+        self.assertTrue(args.rag_ablation)
+        self.assertFalse(args.build)
+        self.assertTrue(args.json)
+
     def test_agent_lab_generate_arguments_parse(self) -> None:
         args = build_parser().parse_args(
             [

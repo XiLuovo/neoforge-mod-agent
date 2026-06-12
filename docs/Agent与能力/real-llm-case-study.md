@@ -1,13 +1,14 @@
 # Real LLM Case Study
 
-这份文档现在用于说明真实 provider 如何接入 RC1 主线，而不是把旧的少量生成 case 当作当前主证据。
+这份文档现在用于说明真实 provider 如何接入当前主线，而不是把旧的少量生成 case 当作当前主证据。
 
 ## 当前主证据
 
-RC1 的真实行为证据应来自：
+当前真实行为证据应来自：
 
 - `.agent/prompt-trace.json`
 - `.agent/tool-call-trace.json`
+- `.agent/rag-decision-trace.json`（RAG 触发或 ablation case）
 - `.agent/reviewer-report.json`
 - `.agent/agent-run.json`
 - audit/build result

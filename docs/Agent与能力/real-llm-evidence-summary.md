@@ -6,7 +6,7 @@
 
 mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以在可复现 case 上进入 ModSpec、生成和 audit gate，并且失败会被拆成 provider、schema、audit、build、runtime、fallback 等类别。最新 13 case 真实跑批暴露出 1 个复杂世界/结构 prompt 的 schema failure，因此当前证据不是“所有 prompt 都稳定成功”，而是“成功率、失败类型和证据边界都能被解释”。
 
-当前对外统计口径：最新 13 个 no-build + audit real LLM case 中 `12/13` strict success，`1/13` schema failure，provider/audit/fallback failure 均为 `0`，没有传入 runtime evidence，因此 `13/13` 只能记为 runtime unverified；额外历史 3 个 build case 中 provider/schema/audit 全部通过，依赖重试后 `3/3` strict generated projects 可 Gradle build；本地 unittest 当前可发现 185 个 case，2026-06-09 最近一次完整回归 185/185 通过。
+当前对外统计口径：最新 13 个 no-build + audit real LLM case 中 `12/13` strict success，`1/13` schema failure，provider/audit/fallback failure 均为 `0`，没有传入 runtime evidence，因此 `13/13` 只能记为 runtime unverified；额外历史 3 个 build case 中 provider/schema/audit 全部通过，依赖重试后 `3/3` strict generated projects 可 Gradle build；本地 unittest 当前可发现 193 个 case，2026-06-10 最近一次完整回归 193/193 通过。
 
 ## 证据清单
 
@@ -156,7 +156,7 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 
 可以这样讲：
 
-> 我没有只用 mock 结果包装项目。mock 用来证明工程链路可复现；真实 provider 单独跑了最新 13 个 case，统计 provider、schema、audit、build、runtime、fallback 各类结果。最新一轮 `12/13` strict real LLM success，唯一失败是复杂世界/结构 prompt 的 schema failure，provider、audit、fallback failure 都是 `0`。我也明确记录了这轮没有 runtime evidence，所以 `13/13` 是 runtime unverified，不能包装成游戏内验证通过。随后我又保留了 3 个 build follow-up case，依赖重试后 3 个 strict generated projects 都能 Gradle build 成功。再加上本地 unittest 最近一次完整回归 185/185 通过，所以我能区分模型失败、结构化输出失败、审计失败、构建失败、runtime 未验证、外部环境失败和工程回归质量。
+> 我没有只用 mock 结果包装项目。mock 用来证明工程链路可复现；真实 provider 单独跑了最新 13 个 case，统计 provider、schema、audit、build、runtime、fallback 各类结果。最新一轮 `12/13` strict real LLM success，唯一失败是复杂世界/结构 prompt 的 schema failure，provider、audit、fallback failure 都是 `0`。我也明确记录了这轮没有 runtime evidence，所以 `13/13` 是 runtime unverified，不能包装成游戏内验证通过。随后我又保留了 3 个 build follow-up case，依赖重试后 3 个 strict generated projects 都能 Gradle build 成功。再加上本地 unittest 最近一次完整回归 193/193 通过，所以我能区分模型失败、结构化输出失败、审计失败、构建失败、runtime 未验证、外部环境失败和工程回归质量。
 
 ## 简历表述
 
@@ -166,7 +166,7 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 
 中文投递口径可写成：
 
-> 完成最新 13 case real provider 稳定性验证：12/13 strict real LLM success，唯一失败归类为 schema failure；provider/audit/fallback failure 均为 0，并将缺失 runtime evidence 的 case 单独记为 runtime unverified；额外 build follow-up 中依赖重试后 3/3 strict generated projects 可 Gradle build，本地 unittest 最近一次完整回归 185/185 通过。
+> 完成最新 13 case real provider 稳定性验证：12/13 strict real LLM success，唯一失败归类为 schema failure；provider/audit/fallback failure 均为 0，并将缺失 runtime evidence 的 case 单独记为 runtime unverified；额外 build follow-up 中依赖重试后 3/3 strict generated projects 可 Gradle build，本地 unittest 最近一次完整回归 193/193 通过。
 
 ## 没有声称的部分
 

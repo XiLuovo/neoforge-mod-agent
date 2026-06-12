@@ -21,7 +21,7 @@ from .auditor import WorkspaceAuditor
 from .builder import GradleBuilder
 from .config import AppConfig
 from .knowledge_base import NeoForgeKnowledgeBase, expand_knowledge_query, summarize_knowledge_hits
-from .llm_client import LLMClient, create_llm_client
+from .llm_client import LLMClient, LLMProviderRequestError, create_llm_client
 from .repair_loop import AutoRepairRunner
 from .tools import ensure_directory, write_json, write_text
 
@@ -464,7 +464,66 @@ class ToolCallingRepairAgent:
                 run_audit=run_audit,
                 state=state,
             )
-            completion = client.complete_json(TOOL_CALLING_REPAIR_SYSTEM_PROMPT, user_prompt)
+            try:
+                completion = client.complete_json(TOOL_CALLING_REPAIR_SYSTEM_PROMPT, user_prompt)
+            except LLMProviderRequestError as exc:
+                observation = _provider_error_observation(exc)
+                trace.append(
+                    {
+                        "iteration": iteration,
+                        "role": "repair_agent",
+                        "source": "provider",
+                        "provider": llm_provider,
+                        "model": str(getattr(client, "model", "")),
+                        "thought_summary": "The repair-agent provider request failed after retry handling.",
+                        "action": "provider_error",
+                        "args": {},
+                        "observation": _compact_payload(observation),
+                        "completion": observation.get("provider_error"),
+                    }
+                )
+                prompt_traces.append(
+                    AgentPromptTrace(
+                        role="repair_agent",
+                        planner_mode="tool_calling",
+                        provider=llm_provider,
+                        prompt_kind="repair_tool_call",
+                        system_prompt=TOOL_CALLING_REPAIR_SYSTEM_PROMPT,
+                        input_text=user_prompt,
+                        error=str(exc),
+                        completion_usage={"provider_error": exc.to_dict(), "provider_attempts": list(exc.attempt_summaries)},
+                        completion_attempts=list(exc.attempt_summaries),
+                    )
+                )
+                state["observations"].append(
+                    {
+                        "kind": "tool_observation",
+                        "iteration": iteration,
+                        "tool_action": "provider_error",
+                        "summary": observation.get("summary", ""),
+                        "observation": observation,
+                    }
+                )
+                if exc.retryable and _audit_supports_managed_regeneration(state.get("current_audit", {})):
+                    fallback = self._execute_tool(
+                        workspace,
+                        action="regenerate_managed_files",
+                        args={},
+                        run_build=run_build,
+                        run_audit=run_audit,
+                        state=state,
+                    )
+                    _append_executor_observation(
+                        trace,
+                        state,
+                        action="regenerate_managed_files",
+                        observation=fallback,
+                        summary="Provider retries were exhausted; executor used deterministic managed-file regeneration.",
+                    )
+                    if _requested_gates_pass(state["current_build"], state["current_audit"], run_build=run_build, run_audit=run_audit):
+                        state["finished"] = True
+                        state["finish_summary"] = "Provider failed after retries; deterministic managed-file regeneration passed requested gates."
+                break
             action_payload, parse_warnings = normalize_tool_action(completion.parsed_json)
             action = action_payload.get("action", "finish")
             args = action_payload.get("args", {})
@@ -506,6 +565,7 @@ class ToolCallingRepairAgent:
                     normalized_json=action_payload,
                     warnings=parse_warnings,
                     completion_usage=completion.telemetry_dict(),
+                    completion_attempts=list(completion.provider_attempts or []),
                 )
             )
             state["completed_actions"].append(action)
@@ -948,6 +1008,21 @@ class ToolCallingRepairAgent:
                 observation=observation,
                 summary="Executor ran final audit after repair actions.",
             )
+            if not _gate_success(observation) and _audit_has_worldgen_rule_test_failure(observation):
+                regen_observation = self._regenerate_managed_files(workspace, run_build=run_build, run_audit=run_audit)
+                state["repair_loop"] = regen_observation.get("repair_loop", {})
+                last_attempt = regen_observation.get("last_attempt") or {}
+                if isinstance(last_attempt.get("build"), dict) and last_attempt["build"].get("attempted"):
+                    state["current_build"] = last_attempt["build"]
+                if isinstance(last_attempt.get("audit"), dict) and last_attempt["audit"].get("attempted"):
+                    state["current_audit"] = last_attempt["audit"]
+                _append_executor_observation(
+                    trace,
+                    state,
+                    action="regenerate_managed_files",
+                    observation=regen_observation,
+                    summary="Executor regenerated managed worldgen files after rule-test audit still failed.",
+                )
         if run_build and not _gate_success(state["current_build"]):
             observation = self._run_build(workspace, enabled=True)
             state["current_build"] = observation
@@ -1202,6 +1277,75 @@ def _gate_failed(payload: dict[str, Any]) -> bool:
 
 def _gate_success(payload: dict[str, Any]) -> bool:
     return bool(payload.get("attempted") and payload.get("success") is True)
+
+
+def _provider_error_observation(exc: LLMProviderRequestError) -> dict[str, Any]:
+    return {
+        "success": False,
+        "summary": str(exc),
+        "provider_error": exc.to_dict(),
+        "provider_error_type": type(exc).__name__,
+        "provider_status_code": exc.status_code,
+        "provider_retryable": exc.retryable,
+        "provider_attempts": exc.attempts,
+    }
+
+
+def _audit_supports_managed_regeneration(audit_payload: dict[str, Any]) -> bool:
+    if not isinstance(audit_payload, dict) or audit_payload.get("success") is not False:
+        return False
+    if _audit_has_worldgen_rule_test_failure(audit_payload):
+        return True
+    errors = audit_payload.get("errors") if isinstance(audit_payload.get("errors"), list) else []
+    managed_issue_prefixes = (
+        "summary:",
+        "item:",
+        "block:",
+        "recipe:",
+        "ore:",
+        "world_feature:",
+        "entity:",
+        "machine:",
+        "project:pack_mcmeta",
+    )
+    managed_message_terms = (
+        "missing required file",
+        "invalid json",
+        "missing lang key",
+        "missing referenced id",
+        "not a valid png",
+        "png",
+        "pack.mcmeta",
+    )
+    for item in errors:
+        if not isinstance(item, dict):
+            continue
+        issue_id = str(item.get("id") or "")
+        message = str(item.get("message") or "").lower()
+        path = str(item.get("path") or "").replace("\\", "/").lower()
+        managed_id = issue_id.startswith(managed_issue_prefixes)
+        managed_path = "/src/main/resources/" in path or "/src/main/java/" in path or path.startswith("src/main/")
+        managed_message = any(term in message for term in managed_message_terms)
+        if managed_id and (managed_path or managed_message):
+            return True
+    return False
+
+
+def _audit_has_worldgen_rule_test_failure(audit_payload: dict[str, Any]) -> bool:
+    if not isinstance(audit_payload, dict):
+        return False
+    errors = audit_payload.get("errors") if isinstance(audit_payload.get("errors"), list) else []
+    for item in errors:
+        if not isinstance(item, dict):
+            continue
+        issue_id = str(item.get("id") or "")
+        message = str(item.get("message") or "").lower()
+        path = str(item.get("path") or "").replace("\\", "/").lower()
+        if "configured_rule_test" in issue_id or "configured_predicate_type" in issue_id:
+            return True
+        if "configured feature target" in message and "/worldgen/configured_feature/" in path:
+            return True
+    return False
 
 
 def _append_executor_observation(

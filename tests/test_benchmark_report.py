@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from dataclasses import replace
@@ -17,7 +18,9 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from neoforge_agent import AgentBenchmarkRunner, AppConfig, BenchmarkReportRunner
+from neoforge_agent import AgentBenchmarkCaseResult, AgentBenchmarkRunner, AppConfig, BenchmarkReportRunner
+from neoforge_agent import AgentBenchmarkCaseSpec, ModProjectPlanner, WorkspaceAuditor, generate_agent_benchmark_holdout_cases
+from neoforge_agent.benchmark_report import _agent_benchmark_breakage_registry, _inject_agent_benchmark_breakage, agent_benchmark_metrics
 
 
 def test_config(workspace_root: Path) -> AppConfig:
@@ -26,6 +29,142 @@ def test_config(workspace_root: Path) -> AppConfig:
 
 
 class BenchmarkReportTests(unittest.TestCase):
+    def test_agent_benchmark_metrics_classify_provider_and_repair_failures(self) -> None:
+        provider_case = AgentBenchmarkCaseResult(
+            identifier="provider-failed",
+            mode="repair",
+            request="repair provider",
+            success=False,
+            workspace=None,
+            failure_kind="provider_error",
+            provider_status_code=524,
+            provider_error_summary="LLM provider returned HTTP 524.",
+            errors=["LLM provider returned HTTP 524."],
+            rag_mode="on",
+        )
+        repair_case = AgentBenchmarkCaseResult(
+            identifier="repair-failed",
+            mode="repair",
+            request="repair logic",
+            success=False,
+            workspace=None,
+            failure_kind="repair_logic_failure",
+            errors=["Configured feature target must be a rule-test object, not a bare string."],
+            rag_mode="on",
+        )
+
+        metrics = agent_benchmark_metrics([provider_case, repair_case])
+
+        self.assertEqual(metrics["provider_error_count"], 1)
+        self.assertEqual(metrics["provider_error_cases_count"], 1)
+        self.assertEqual(metrics["repair_logic_failure_count"], 1)
+        self.assertEqual(metrics["rag_on_repair_logic_failure_count"], 1)
+        failed_by_id = {case["id"]: case for case in metrics["failed_cases"]}
+        self.assertEqual(failed_by_id["provider-failed"]["failure_kind"], "provider_error")
+        self.assertEqual(failed_by_id["provider-failed"]["provider_status_code"], 524)
+
+    def test_agent_benchmark_repair_18_suite_schema_and_registry(self) -> None:
+        suite_path = PROJECT_ROOT / "examples" / "agent_benchmark_repair_18.json"
+        payload = json.loads(suite_path.read_text(encoding="utf-8"))
+        cases = [AgentBenchmarkCaseSpec.from_dict(item) for item in payload["cases"]]
+        registry = _agent_benchmark_breakage_registry()
+
+        self.assertEqual(len(cases), 18)
+        self.assertEqual(len({case.identifier for case in cases}), 18)
+        for case in cases:
+            with self.subTest(case=case.identifier):
+                self.assertEqual(case.mode, "repair")
+                self.assertTrue(case.breakage)
+                self.assertTrue(case.category)
+                self.assertTrue(case.expected_issue_prefixes)
+                self.assertIn(case.breakage, registry)
+
+    def test_agent_benchmark_repair_18_breakages_are_audit_detectable(self) -> None:
+        suite_path = PROJECT_ROOT / "examples" / "agent_benchmark_repair_18.json"
+        payload = json.loads(suite_path.read_text(encoding="utf-8"))
+        cases = [AgentBenchmarkCaseSpec.from_dict(item) for item in payload["cases"]]
+
+        with tempfile.TemporaryDirectory(prefix="agent-bench-breakages-", dir=TMP_ROOT) as tmp:
+            root = Path(tmp)
+            config = test_config(root)
+            planner = ModProjectPlanner(config)
+            auditor = WorkspaceAuditor(config)
+            clean_workspaces: dict[str, Path] = {}
+
+            for index, prompt in enumerate(sorted({case.setup_request for case in cases}), start=1):
+                generation = planner.execute(prompt, workspace_name=f"base-{index}", overwrite=True, run_build=False)
+                self.assertTrue(generation.succeeded, generation.warnings)
+                clean_workspaces[prompt] = generation.workspace_dir
+
+            for case in cases:
+                with self.subTest(case=case.identifier):
+                    workspace = root / f"case-{case.identifier}"
+                    shutil.copytree(clean_workspaces[case.setup_request], workspace)
+
+                    injection = _inject_agent_benchmark_breakage(workspace, case.breakage)
+                    audit = auditor.audit_workspace(workspace)
+                    issue_ids = [issue.id for issue in audit.errors]
+
+                    self.assertTrue(injection.injected_paths)
+                    self.assertFalse(audit.success)
+                    self.assertTrue(
+                        any(
+                            issue_id.startswith(prefix)
+                            for issue_id in issue_ids
+                            for prefix in case.expected_issue_prefixes
+                        ),
+                        f"{case.identifier} issues {issue_ids} did not match {case.expected_issue_prefixes}",
+                    )
+
+    def test_agent_benchmark_repair_holdout_generation_is_seeded(self) -> None:
+        first = generate_agent_benchmark_holdout_cases(seed="unit-alpha", limit=8)
+        second = generate_agent_benchmark_holdout_cases(seed="unit-alpha", limit=8)
+        different = generate_agent_benchmark_holdout_cases(seed="unit-beta", limit=8)
+        registry = _agent_benchmark_breakage_registry()
+
+        self.assertEqual([case.to_dict() for case in first], [case.to_dict() for case in second])
+        self.assertNotEqual([case.setup_request for case in first], [case.setup_request for case in different])
+        self.assertEqual(len(first), 8)
+        self.assertEqual(len({case.identifier for case in first}), 8)
+        for case in first:
+            with self.subTest(case=case.identifier):
+                self.assertEqual(case.mode, "repair")
+                self.assertIn(case.breakage, registry)
+                self.assertTrue(case.category)
+                self.assertTrue(case.expected_issue_prefixes)
+                self.assertIn("Holdout material:", case.setup_request)
+                self.assertNotIn("ruby mod with ruby", case.setup_request.lower())
+
+    def test_agent_benchmark_repair_holdout_runs_mock_ablation(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="agent-bench-holdout-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+
+            result = AgentBenchmarkRunner(config).run(
+                run_name="unit-agent-benchmark-holdout",
+                eval_limit=0,
+                repair_limit=0,
+                llm_provider="mock",
+                run_build=False,
+                run_audit=True,
+                rag_ablation=True,
+                repair_holdout=True,
+                holdout_seed="unit-holdout",
+                holdout_limit=3,
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.metrics["cases_total"], 6)
+            self.assertTrue(result.metrics["repair_holdout"])
+            self.assertEqual(result.metrics["holdout_seed"], "unit-holdout")
+            self.assertEqual(result.metrics["holdout_limit"], 3)
+            self.assertEqual(result.metrics["expected_failure_detection_rate"], 1.0)
+            self.assertEqual(result.metrics["rag_on_expected_detection_rate"], 1.0)
+            for case in result.cases:
+                self.assertTrue(case.identifier.startswith("holdout_unit_holdout_"))
+                self.assertTrue(case.injected_paths)
+                self.assertTrue(case.initial_audit_issue_ids)
+                self.assertTrue(case.detected_expected_failure)
+
     def test_agent_benchmark_runs_real_tool_loop_metrics(self) -> None:
         with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
             config = test_config(Path(tmp))
@@ -107,6 +246,45 @@ class BenchmarkReportTests(unittest.TestCase):
                 )
             )
             self.assertTrue(result.benchmark_report_json_path.exists())
+
+    def test_agent_benchmark_repair_18_subset_reports_detection_fields(self) -> None:
+        source_path = PROJECT_ROOT / "examples" / "agent_benchmark_repair_18.json"
+        source = json.loads(source_path.read_text(encoding="utf-8"))["cases"]
+        selected_ids = {
+            "repair_delete_item_model",
+            "repair_corrupt_recipe_json",
+            "repair_break_recipe_reference",
+            "repair_delete_ore_configured_feature",
+        }
+        selected_cases = [case for case in source if case["id"] in selected_ids]
+
+        with tempfile.TemporaryDirectory(prefix="agent-bench-18-subset-", dir=TMP_ROOT) as tmp:
+            root = Path(tmp)
+            suite_path = root / "subset.json"
+            suite_path.write_text(json.dumps({"cases": selected_cases}, indent=2), encoding="utf-8")
+            config = test_config(root / "workspace")
+
+            result = AgentBenchmarkRunner(config).run(
+                run_name="unit-agent-benchmark-18-subset",
+                cases_path=suite_path,
+                eval_limit=0,
+                repair_limit=0,
+                llm_provider="mock",
+                run_build=False,
+                run_audit=True,
+                rag_ablation=True,
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.metrics["cases_total"], 8)
+            self.assertEqual(result.metrics["expected_failure_detection_rate"], 1.0)
+            self.assertEqual(result.metrics["rag_on_expected_detection_rate"], 1.0)
+            self.assertIn("asset_resource", result.metrics["cases_by_category"])
+            self.assertIn("data_worldgen", result.metrics["cases_by_category"])
+            for case in result.cases:
+                self.assertTrue(case.injected_paths)
+                self.assertTrue(case.initial_audit_issue_ids)
+                self.assertTrue(case.detected_expected_failure)
 
     def test_agent_benchmark_real_provider_preflight(self) -> None:
         with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:

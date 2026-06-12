@@ -514,6 +514,9 @@ def build_parser() -> argparse.ArgumentParser:
     agent_bench_parser.add_argument("--require-real", action="store_true", help="Fail if the real provider is not configured.")
     agent_bench_parser.add_argument("--rag-mode", choices=["auto", "on", "off"], default="auto", help="Agentic RAG policy mode for benchmarked agent runs.")
     agent_bench_parser.add_argument("--rag-ablation", action="store_true", help="Run paired RAG-on/RAG-off benchmark cases and report deltas.")
+    agent_bench_parser.add_argument("--repair-holdout", action="store_true", help="Generate a seeded randomized repair holdout suite instead of using default benchmark cases.")
+    agent_bench_parser.add_argument("--holdout-seed", default="default", help="Seed for --repair-holdout case and material selection.")
+    agent_bench_parser.add_argument("--holdout-limit", type=int, default=8, help="Number of base repair holdout cases to generate before optional RAG ablation pairing.")
     bench_build_group = agent_bench_parser.add_mutually_exclusive_group()
     bench_build_group.add_argument("--build", dest="build", action="store_true", help="Run Gradle build for benchmark cases.")
     bench_build_group.add_argument("--no-build", dest="build", action="store_false", help="Skip Gradle build for benchmark cases.")
@@ -1259,6 +1262,9 @@ def _run_agent_command(args: argparse.Namespace, config: AppConfig) -> int:
             rag_ablation=args.rag_ablation,
             run_real=args.run_real,
             require_real=args.require_real,
+            repair_holdout=args.repair_holdout,
+            holdout_seed=args.holdout_seed,
+            holdout_limit=args.holdout_limit,
         )
         payload = result.to_dict()
         _print_payload(payload, as_json=args.json)

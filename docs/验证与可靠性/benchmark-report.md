@@ -1,6 +1,6 @@
 # Trace-Backed Agent Benchmark
 
-> RC1 benchmark 的主线是 `agent bench`。旧静态聚合报告可作为兼容工具，但当前质量指标以真实 agent trace 为准。
+> 当前 benchmark 的主线是 `agent bench`。旧静态聚合报告可作为兼容工具，但当前质量指标以真实 agent trace 为准；RC2 增加 RAG on/off ablation，并把 repair benchmark 扩展为 18 个 audit 层真实故障类型。
 
 ## Command
 
@@ -32,29 +32,44 @@ benchmark case 必须能覆盖仅靠 managed-file regeneration 修不好的失�
 - `build_success_rate`
 - `audit_success_rate`
 - `repair_success_rate`
+- `audit_detection_rate`
+- `expected_failure_detection_rate`
 - `avg_tool_calls`
 - `avg_iterations`
 - `rag_hit_rate`
 - `patch_accept_rate`
 - `rollback_count`
+- `cases_by_category`
 - `failed_cases`
 - `trace_paths`
 
 这些指标来自 `.agent/tool-call-trace.json`、`reviewer-report.json`、`agent-run.json`、audit/build result 和 rollback evidence。
 
+Repair case 还会记录注入和初始检测证据：
+
+- `breakage`
+- `category`
+- `injected_paths`
+- `initial_audit_issue_ids`
+- `detected_expected_failure`
+
 ## Outputs
 
 ```text
-workspace/agent-benchmark-runs/<run-id>/.agent/agent-benchmark-report.json
-workspace/agent-benchmark-runs/<run-id>/.agent/agent-benchmark-report.md
-workspace/agent-benchmark-runs/<run-id>/.agent/agent-benchmark-report.html
+workspace/benchmark-runs/<run-id>/.agent/agent-benchmark-report.json
+workspace/benchmark-runs/<run-id>/.agent/agent-benchmark-report.md
+workspace/benchmark-runs/<run-id>/.agent/agent-benchmark-report.html
 ```
 
 每个 benchmark case 也会保留自己的 workspace evidence，便于回放失败原因和 patch 过程。
 
-## RC2 RAG Ablation
+## RAG Ablation Suites
 
-RC2 adds an agent benchmark mode for measuring whether Agentic RAG actually changes repair outcomes.
+`--rag-ablation` expands each repair case into paired `rag_on` and `rag_off` runs. RAG-off still records skipped decisions, so the report can compare both behavior and evidence. RAG-on 是主验收路径；RAG-off 是对照组，成功率可以在 0 到 1 之间，不作为硬失败条件。
+
+### 3-Case Smoke
+
+`examples/agentic_rag_ablation.json` 保留为快速 smoke suite，覆盖 `neoforge.mods.toml`、`pack.mcmeta` 和 recipe/resource-path repair。它适合本地频繁回归，确认 trace、reviewer、RAG decision 和 citation coverage 没退化。
 
 Fast mock run:
 
@@ -68,24 +83,74 @@ py -3.11 -m agent.cli agent bench `
   --json
 ```
 
-Real provider acceptance, when `NEOFORGE_AGENT_LLM_API_KEY` or `OPENAI_API_KEY` and a model are configured:
+### 18-Case Repair Suite
+
+`examples/agent_benchmark_repair_18.json` 是严肃评测用的完整 repair suite，覆盖 18 个 audit 层故障：
+
+- metadata：missing/corrupt `neoforge.mods.toml`、`pack.mcmeta`
+- asset/resource：item definition/model/texture、blockstate、loot table、lang entry
+- data/worldgen：recipe JSON/reference、ore configured feature/rule test/biome modifier
+- generated code/domain artifacts：behavior item Java、machine block entity Java、entity spawn modifier
+
+Mock full run:
 
 ```powershell
 $env:PYTHONPATH = (Resolve-Path .\src)
 py -3.11 -m agent.cli agent bench `
-  --suite examples/agentic_rag_ablation.json `
+  --suite examples/agent_benchmark_repair_18.json `
+  --llm-provider mock `
+  --rag-ablation `
+  --audit `
+  --no-build `
+  --json
+```
+
+Real provider full acceptance, when `NEOFORGE_AGENT_LLM_API_KEY` or `OPENAI_API_KEY` and a model are configured:
+
+```powershell
+$env:PYTHONPATH = (Resolve-Path .\src)
+py -3.11 -m agent.cli agent bench `
+  --suite examples/agent_benchmark_repair_18.json `
   --llm-provider openai-compatible `
   --run-real `
   --require-real `
   --rag-ablation `
   --audit `
+  --no-build `
   --json
 ```
 
-`--rag-ablation` expands each repair case into paired `rag_on` and `rag_off` runs. RAG-off still records skipped decisions, so the report can compare both behavior and evidence.
+Full ablation produces 36 repair runs. It is slower and may incur provider cost; use the 3-case smoke for fast checks and the 18-case suite for acceptance evidence.
+
+### Seeded Repair Holdout
+
+`--repair-holdout` generates a deterministic randomized repair suite from the same breakage registry. It keeps the same failure types, but changes material/mod/resource names such as `sapphire_holdout`, `cobalt_block`, or `amber_ore` according to `--holdout-seed`. This is not a replacement for the fixed 18-case regression suite; it is a lightweight guard against tuning only for the public fixed cases.
+
+Mock holdout run:
+
+```powershell
+$env:PYTHONPATH = (Resolve-Path .\src)
+py -3.11 -m agent.cli agent bench `
+  --repair-holdout `
+  --holdout-seed demo `
+  --holdout-limit 8 `
+  --llm-provider mock `
+  --rag-ablation `
+  --audit `
+  --no-build `
+  --json
+```
+
+The same seed produces the same case list, which makes failures reproducible. Different seeds select different breakage/material combinations. `--holdout-limit 8 --rag-ablation` produces 16 paired repair runs; increase the limit when you need broader evidence and can afford the time/provider cost.
 
 Key metrics:
 
+- `audit_detection_rate`
+- `expected_failure_detection_rate`
+- `cases_by_category`
+- `repair_holdout`
+- `holdout_seed`
+- `holdout_limit`
 - `rag_on_success_rate`
 - `rag_off_success_rate`
 - `rag_on_audit_success_rate`
@@ -97,9 +162,10 @@ Key metrics:
 - `rag_success_delta`
 - `rag_iteration_delta`
 - `rag_tool_call_delta`
+- `rag_on_expected_detection_rate`
 - `rag_citation_coverage_rate`
 
-The default RC2 suite covers `neoforge.mods.toml`, `pack.mcmeta`, and recipe/resource-path repair cases. Each RAG-on repair should leave `tool-call-trace.json`, `reviewer-report.json`, and `rag-decision-trace.json` under the repaired workspace `.agent` directory.
+Each RAG-on repair should leave `tool-call-trace.json`, `reviewer-report.json`, and `rag-decision-trace.json` under the repaired workspace `.agent` directory.
 
 ### RC2 Acceptance Snapshot
 
@@ -116,7 +182,7 @@ git diff --check
 Observed result:
 
 ```text
-187 tests OK
+193 tests OK
 compileall passed
 diff --check passed with only LF/CRLF warnings on Windows
 ```
@@ -129,7 +195,7 @@ model = deepseek-v4-flash
 parsed_json = {"ok": true, "purpose": "rc2 real provider smoke"}
 ```
 
-The latest complete real-provider ablation report is:
+The latest complete 3-case real-provider ablation report is:
 
 ```text
 workspace/benchmark-runs/rc2-real-ablation-accepted/.agent/agent-benchmark-report.json
@@ -150,7 +216,7 @@ rag_citation_coverage_rate = 0.5833
 failed_cases_count = 0
 ```
 
-Real-provider caution: the configured provider can be slow on full paired ablation runs. If a full real run stalls, use the complete `rc2-real-ablation-accepted` evidence for release notes, then run a short real-provider smoke to confirm current credentials and endpoint health. Use mock ablation for repeatable RAG-on/RAG-off regression checks.
+Real-provider caution: the configured provider can be slow on paired ablation runs, especially the 18-case suite. Use mock ablation for repeatable RAG-on/RAG-off regression checks; use real full acceptance when you need current provider evidence.
 
 ## Boundary
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from dataclasses import replace
@@ -45,7 +46,18 @@ class ShowcaseTests(unittest.TestCase):
             self.assertEqual(statuses["agent_generate"], "pass")
             self.assertEqual(statuses["agent_modify"], "pass")
             self.assertEqual(statuses["eval_smoke"], "pass")
+            self.assertEqual(statuses["development_e2e"], "pass")
             self.assertEqual(statuses["quality_gate"], "skip")
+
+            payload = json.loads(result.showcase_report_json_path.read_text(encoding="utf-8"))
+            development_step = next(step for step in payload["steps"] if step["name"] == "development_e2e")
+            self.assertTrue(Path(development_step["artifacts"]["eval_report_json"]).exists())
+            self.assertEqual(development_step["metrics"]["expected_feature_match_rate"], 1.0)
+            self.assertEqual(development_step["metrics"]["expected_category_match_rate"], 1.0)
+            self.assertTrue(development_step["metrics"]["audit_success"])
+            self.assertFalse(development_step["metrics"]["build_attempted"])
+            self.assertIsNone(development_step["metrics"]["build_success"])
+            self.assertTrue(development_step["metrics"]["repeat_modify_success"])
 
 
 if __name__ == "__main__":

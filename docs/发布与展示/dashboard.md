@@ -1,6 +1,6 @@
 # Web Demo Dashboard
 
-`web-demo` 和 `dashboard` 是展示辅助入口。RC1 推荐 demo 仍是命令行跑 `agent develop`、`agent repair`、`agent bench`，再展示 `.agent` evidence；Dashboard 用来把这些 evidence 可视化。
+`web-demo` 和 `dashboard` 是展示辅助入口。当前推荐 demo 仍是命令行跑 `agent develop`、`agent repair`、`agent bench` 和 RC2 `--rag-ablation`，再展示 `.agent` evidence；Dashboard 用来把这些 evidence 可视化。
 
 ## Web Demo
 
@@ -31,10 +31,11 @@ workspace/dashboard-runs/rc1-dashboard/.agent/dashboard-data.json
 workspace/dashboard-runs/rc1-dashboard/.agent/dashboard-report.md
 ```
 
-## RC1 展示重点
+## 展示重点
 
 - `.agent/agent-run.json`
 - `.agent/tool-call-trace.json`
+- `.agent/rag-decision-trace.json`
 - `.agent/reviewer-report.json`
 - `.agent/audit-report.json`
 - `.agent/structured-patch-rollback-report.json`
