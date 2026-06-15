@@ -32,7 +32,13 @@ from neoforge_agent import (
     write_planner_artifacts,
 )
 from neoforge_agent.llm_client import LLMCompletion
-from neoforge_agent.llm_planner import _build_modify_system_prompt, _build_system_prompt, plan_with_llm
+from neoforge_agent.llm_planner import (
+    _build_modify_system_prompt,
+    _build_system_prompt,
+    _decomposed_feature_user_prompt,
+    plan_with_decomposed_llm,
+    plan_with_llm,
+)
 
 
 def test_config(workspace_root: Path) -> AppConfig:
@@ -114,6 +120,35 @@ class SchemaRetryClient:
         return LLMCompletion(raw_text=json.dumps(ruby_payload()), parsed_json=ruby_payload(), provider=self.provider_name)
 
 
+class BadDecomposedFeatureClient:
+    provider_name = "openai-compatible"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete_json(self, system_prompt: str, user_prompt: str) -> LLMCompletion:
+        self.calls += 1
+        if "DECOMPOSED_FEATURE_PLAN_V1" in system_prompt:
+            payload = {
+                "mod_id": "ruby_mod",
+                "mod_name": "Ruby Mod",
+                "package": "com.generated.ruby_mod",
+                "features": [
+                    {
+                        "type": "item",
+                        "id": "ruby",
+                        "display_name_en_us": "Ruby",
+                        "intent": "Base material item.",
+                        "depends_on": [],
+                        "fields": {"type": "item", "id": "ruby", "display_name_en_us": "Ruby"},
+                    }
+                ],
+            }
+            return LLMCompletion(raw_text=json.dumps(payload), parsed_json=payload, provider=self.provider_name)
+        payload = {"note": "not a feature json object"}
+        return LLMCompletion(raw_text=json.dumps(payload), parsed_json=payload, provider=self.provider_name)
+
+
 class FakeProviderResponse:
     def __init__(self, payload: dict) -> None:
         self.payload = payload
@@ -174,6 +209,79 @@ class LLMStabilityTests(unittest.TestCase):
         self.assertFalse(artifacts.schema_validation_attempts[0]["success"])
         self.assertTrue(artifacts.schema_validation_attempts[-1]["success"])
         self.assertIn("quality", artifacts.rag_quality)
+
+    def test_decomposed_planner_records_bad_feature_raw_output(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+            workspace = Path(tmp) / "workspace"
+            client = BadDecomposedFeatureClient()
+
+            spec, artifacts = plan_with_decomposed_llm("Create a ruby mod with ruby.", client, config=config)
+            write_planner_artifacts(workspace, config, artifacts)
+
+            self.assertEqual(spec.mod_id, "ruby_mod")
+            self.assertEqual(spec.items[0].identifier, "ruby")
+            self.assertTrue(artifacts.decomposed_bad_raw_outputs)
+            decomposed_dir = workspace / ".agent" / "decomposed-planner"
+            self.assertTrue((decomposed_dir / "feature-plan.json").exists())
+            self.assertTrue((decomposed_dir / "feature-jsons.json").exists())
+            self.assertTrue((decomposed_dir / "bad-raw-outputs.json").exists())
+
+    def test_decomposed_feature_prompt_uses_slim_context(self) -> None:
+        sibling_sentinel = "SIBLING_FULL_FIELDS_SHOULD_NOT_LEAK"
+        feature_plan = {
+            "mod_id": "ruby_mod",
+            "mod_name": "Ruby Mod",
+            "package": "com.generated.ruby_mod",
+            "version": "0.1.0",
+            "description": "Synthetic prompt slimming fixture.",
+            "authors": ["Codex"],
+            "license_name": "MIT",
+            "features": [
+                {
+                    "type": "item",
+                    "id": "ruby",
+                    "display_name_en_us": "Ruby",
+                    "intent": "Material item.",
+                    "depends_on": [],
+                    "fields": {"huge_payload": sibling_sentinel * 80},
+                },
+                {
+                    "type": "ore",
+                    "id": "ruby_ore",
+                    "display_name_en_us": "Ruby Ore",
+                    "intent": "Overworld ore.",
+                    "depends_on": ["ruby"],
+                    "fields": {
+                        "drop": "ruby_mod:ruby",
+                        "worldgen": {
+                            "enabled": True,
+                            "dimension": "minecraft:overworld",
+                            "min_y": -64,
+                            "max_y": 32,
+                            "vein_size": 6,
+                            "veins_per_chunk": 4,
+                        },
+                    },
+                },
+            ],
+        }
+
+        prompt = _decomposed_feature_user_prompt(
+            "Create a ruby mod with ore worldgen.",
+            feature_plan,
+            feature_plan["features"][1],
+        )
+
+        self.assertNotIn("Feature plan JSON:", prompt)
+        self.assertNotIn(sibling_sentinel, prompt)
+        self.assertIn("Mod metadata JSON:", prompt)
+        self.assertIn("Reference map JSON:", prompt)
+        self.assertIn("Dependency summary JSON:", prompt)
+        self.assertIn("Field contract JSON:", prompt)
+        self.assertIn("Target feature plan item JSON:", prompt)
+        self.assertIn('"resource_id": "ruby_mod:ruby"', prompt)
+        self.assertLess(len(prompt), 4_000)
 
     def test_system_prompts_include_real_llm_modspec_contract(self) -> None:
         create_prompt = _build_system_prompt("zh_cn")

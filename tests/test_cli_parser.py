@@ -106,6 +106,23 @@ class CliParserTests(unittest.TestCase):
         self.assertEqual(args.run_name, "unit")
         self.assertTrue(args.json)
 
+    def test_eval_accepts_decomposed_planner(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "eval",
+                "--planner",
+                "decomposed",
+                "--llm-provider",
+                "mock",
+                "--no-build",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.command, "eval")
+        self.assertEqual(args.planner, "decomposed")
+        self.assertEqual(args.llm_provider, "mock")
+
     def test_eval_compare_arguments_parse(self) -> None:
         args = build_parser().parse_args(
             [

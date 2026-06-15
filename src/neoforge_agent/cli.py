@@ -24,7 +24,7 @@ from .knowledge_base import KnowledgeQueryRunner
 from .llm_client import check_llm_provider_health, create_llm_client
 from .llm_engineering_report import LLMEngineeringReportRunner
 from .llm_eval_report import RealLLMEvalReportRunner
-from .llm_planner import LLMPlanningError, PlannerArtifacts, plan_with_llm, write_planner_artifacts
+from .llm_planner import LLMPlanningError, PlannerArtifacts, plan_with_decomposed_llm, plan_with_llm, write_planner_artifacts
 from .modifier import WorkspaceModifier
 from .models import ModSpec, RequestOverrides
 from .planner import ModProjectPlanner
@@ -41,6 +41,9 @@ from .showcase import ShowcaseRunner
 from .tools import slugify_mod_id, write_generation_summary
 from .tool_manifest import ToolManifestRunner
 from .web_demo import WebDemoRunner, WebDemoServer
+
+
+PLANNER_CHOICES = ["rules", "llm", "decomposed", "auto"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -74,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     modify_parser.add_argument("workspace", help="Path or workspace name of an existing generated mod project.")
     modify_parser.add_argument("change_request", help="Natural language change request to merge into the existing ModSpec.")
-    modify_parser.add_argument("--planner", choices=["rules", "llm", "auto"], default="rules", help="Planner mode to use for the change request patch.")
+    modify_parser.add_argument("--planner", choices=PLANNER_CHOICES, default="rules", help="Planner mode to use for the change request patch.")
     modify_parser.add_argument("--llm-provider", choices=["mock", "openai-compatible"], default="openai-compatible", help="LLM provider used when modify planner=llm or auto falls back to LLM.")
     _add_generation_execution_arguments(modify_parser)
     modify_parser.add_argument("--repair", action="store_true", help="Generate repair artifacts if the build fails.")
@@ -130,7 +133,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run benchmark prompts through the agent workflow and write evaluation reports.",
     )
     eval_parser.add_argument("--cases", help="Optional JSON file containing eval cases.")
-    eval_parser.add_argument("--planner", choices=["rules", "llm", "auto"], default="llm", help="Planner mode used by benchmark cases.")
+    eval_parser.add_argument("--planner", choices=PLANNER_CHOICES, default="llm", help="Planner mode used by benchmark cases.")
     eval_parser.add_argument("--llm-provider", choices=["mock", "openai-compatible"], default="mock", help="LLM provider used when planner mode needs an LLM.")
     eval_parser.add_argument("--run-name", help="Optional stable run folder name under workspace/eval-runs/.")
     eval_parser.add_argument("--limit", type=int, help="Only run the first N eval cases.")
@@ -315,7 +318,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run a portfolio-friendly offline showcase flow and write a consolidated report.",
     )
     showcase_parser.add_argument("--run-name", help="Optional stable run folder name under workspace/showcase-runs/.")
-    showcase_parser.add_argument("--planner", choices=["rules", "llm", "auto"], default="llm", help="Planner mode used by showcase agent runs.")
+    showcase_parser.add_argument("--planner", choices=PLANNER_CHOICES, default="llm", help="Planner mode used by showcase agent runs.")
     showcase_parser.add_argument("--llm-provider", choices=["mock", "openai-compatible"], default="mock", help="LLM provider used by showcase agent runs.")
     showcase_parser.add_argument("--eval-limit", type=int, default=2, help="Number of default eval cases to run in showcase eval smoke.")
     showcase_build_group = showcase_parser.add_mutually_exclusive_group()
@@ -330,7 +333,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run a portfolio-grade one-command offline demo flow and write a Chinese consolidated report.",
     )
     portfolio_parser.add_argument("--run-name", help="Optional stable run folder name under workspace/portfolio-runs/.")
-    portfolio_parser.add_argument("--planner", choices=["rules", "llm", "auto"], default="llm", help="Planner mode used by portfolio demo agent runs.")
+    portfolio_parser.add_argument("--planner", choices=PLANNER_CHOICES, default="llm", help="Planner mode used by portfolio demo agent runs.")
     portfolio_parser.add_argument("--llm-provider", choices=["mock", "openai-compatible"], default="mock", help="LLM provider used by portfolio demo agent runs.")
     portfolio_parser.add_argument("--candidate-provider", choices=["mock", "openai-compatible"], default="mock", help="Candidate provider used by the LLM eval report step.")
     portfolio_parser.add_argument("--eval-limit", type=int, default=2, help="Number of default eval cases to run in showcase and LLM eval steps.")
@@ -346,7 +349,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Generate a local static Web demo dashboard from showcase, capability, and RAG reports.",
     )
     dashboard_parser.add_argument("--run-name", help="Optional stable run folder name under workspace/dashboard-runs/.")
-    dashboard_parser.add_argument("--planner", choices=["rules", "llm", "auto"], default="llm", help="Planner mode used by the dashboard showcase run.")
+    dashboard_parser.add_argument("--planner", choices=PLANNER_CHOICES, default="llm", help="Planner mode used by the dashboard showcase run.")
     dashboard_parser.add_argument("--llm-provider", choices=["mock", "openai-compatible"], default="mock", help="LLM provider used by the dashboard showcase run.")
     dashboard_parser.add_argument("--eval-limit", type=int, default=2, help="Number of default eval cases to run in the dashboard showcase.")
     dashboard_parser.add_argument("--quality-gate", action="store_true", help="Include the default fast quality gate inside the showcase run.")
@@ -486,7 +489,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="Fix build and audit failures without changing user-owned files.",
         help="Natural language repair goal.",
     )
-    agent_repair_parser.add_argument("--planner", choices=["rules", "llm", "auto"], default="llm", help="Planner label recorded in the repair trace.")
+    agent_repair_parser.add_argument("--planner", choices=PLANNER_CHOICES, default="llm", help="Planner label recorded in the repair trace.")
     agent_repair_parser.add_argument("--llm-provider", choices=["mock", "openai-compatible"], default="mock", help="LLM provider label recorded in the repair trace.")
     agent_repair_parser.add_argument("--max-iterations", type=int, default=5, help="Maximum repair-loop iterations.")
     agent_repair_parser.add_argument("--rag-mode", choices=["auto", "on", "off"], default="auto", help="Agentic RAG policy mode for repair tool calls.")
@@ -552,7 +555,7 @@ def _add_common_generation_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--author", action="append", dest="authors", default=[], help="Append an author entry. Repeat to add multiple authors.")
     parser.add_argument("--license", dest="license_name", help="Override the license name written into the workspace.")
     parser.add_argument("--description", help="Override the mod description.")
-    parser.add_argument("--planner", choices=["rules", "llm", "auto"], default="rules", help="Planner mode to use for natural language parsing.")
+    parser.add_argument("--planner", choices=PLANNER_CHOICES, default="rules", help="Planner mode to use for natural language parsing.")
     parser.add_argument("--llm-provider", choices=["mock", "openai-compatible"], default="openai-compatible", help="LLM provider used when planner=llm or planner=auto falls back to LLM.")
     _add_generation_execution_arguments(parser)
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output.")
@@ -569,9 +572,9 @@ def _add_generation_execution_arguments(parser: argparse.ArgumentParser) -> None
 
 
 def _add_agent_common_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--planner", choices=["rules", "llm", "auto"], default="llm", help="Planner role implementation.")
+    parser.add_argument("--planner", choices=PLANNER_CHOICES, default="llm", help="Planner role implementation.")
     parser.add_argument("--llm-provider", choices=["mock", "openai-compatible"], default="mock", help="LLM provider for agent planning.")
-    parser.add_argument("--require-llm", action="store_true", help="Fail instead of falling back to rules when planner=llm cannot produce a real LLM ModSpec.")
+    parser.add_argument("--require-llm", action="store_true", help="Fail instead of falling back to rules when an LLM-backed planner cannot produce a real ModSpec.")
     parser.add_argument(
         "--code-lane",
         choices=["hybrid", "modspec", "direct"],
@@ -1441,28 +1444,30 @@ def _resolve_spec_from_prompt(
     if planner_mode == "rules":
         return planner.parse_request(request, overrides=overrides), None, [], "rules"
 
-    if planner_mode == "llm":
+    if planner_mode in {"llm", "decomposed"}:
+        planner_label = "Decomposed planner" if planner_mode == "decomposed" else "LLM planner"
+        planner_fn = plan_with_decomposed_llm if planner_mode == "decomposed" else plan_with_llm
         health = check_llm_provider_health(provider)
         if provider == "openai-compatible" and not health.healthy:
             spec = planner.parse_request(request, overrides=overrides)
             warnings = [
-                "LLM provider health check failed; generate planner fell back to rules.",
+                f"{planner_label} provider health check failed; generate planner fell back to rules.",
                 *health.errors,
                 *health.warnings,
             ]
-            return spec, None, warnings, "llm->rules"
+            return spec, None, warnings, f"{planner_mode}->rules"
         try:
             client = create_llm_client(provider, config.project_root)
-            spec, artifacts = plan_with_llm(request, client, config=config)
+            spec, artifacts = planner_fn(request, client, config=config)
             _apply_overrides(spec, overrides)
-            return spec, artifacts, list(artifacts.warnings), "llm"
+            return spec, artifacts, list(artifacts.warnings), planner_mode
         except (LLMPlanningError, ValueError, RuntimeError) as exc:
             spec = planner.parse_request(request, overrides=overrides)
             artifacts = exc.artifacts if isinstance(exc, LLMPlanningError) else None
-            warnings = [f"LLM planner failed; fallback to rules: {exc}"]
+            warnings = [f"{planner_label} failed; fallback to rules: {exc}"]
             if artifacts is not None:
                 warnings.extend(artifacts.warnings)
-            return spec, artifacts, warnings, "llm->rules"
+            return spec, artifacts, warnings, f"{planner_mode}->rules"
 
     rules_spec = planner.parse_request(request, overrides=overrides)
     if not _rules_planner_needs_llm(request, rules_spec):

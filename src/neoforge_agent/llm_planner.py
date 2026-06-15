@@ -38,6 +38,15 @@ SUPPORTED_FEATURE_TYPES = {
     "balance_plan",
     "quest",
 }
+DECOMPOSED_PLANNER_FEATURE_TYPES = {
+    "item",
+    "ore",
+    "machine",
+    "tool",
+    "sword",
+    "recipe",
+    "progression",
+}
 SUPPORTED_QUEST_TASK_TYPES = {
     "obtain_item",
     "craft_item",
@@ -129,6 +138,11 @@ class PlannerArtifacts:
     provider_metadata: dict[str, Any] = field(default_factory=dict)
     completion_usage: dict[str, Any] = field(default_factory=dict)
     completion_attempts: list[dict[str, Any]] = field(default_factory=list)
+    decomposed_feature_plan_raw_json: dict | None = None
+    decomposed_feature_plan_json: dict | None = None
+    decomposed_feature_json_outputs: list[dict[str, Any]] = field(default_factory=list)
+    decomposed_composed_raw_json: dict | None = None
+    decomposed_bad_raw_outputs: list[dict[str, Any]] = field(default_factory=list)
 
 
 class LLMPlanningError(RuntimeError):
@@ -199,6 +213,139 @@ def plan_with_llm(
         raise LLMPlanningError(artifacts.error, artifacts)
 
     artifacts.error = "Invalid ModSpec from LLM."
+    raise LLMPlanningError(artifacts.error, artifacts)
+
+
+def plan_with_decomposed_llm(
+    prompt: str,
+    client: LLMClient,
+    *,
+    language: str = "zh_cn",
+    config: AppConfig | None = None,
+) -> tuple[ModSpec, PlannerArtifacts]:
+    config = config or AppConfig.default()
+    rag_query, rag_context, rag_hits = _retrieve_rag_context(prompt)
+    rag_summary = summarize_knowledge_hits(rag_hits)
+    system_prompt = _build_decomposed_feature_plan_system_prompt(language, rag_context=rag_context)
+    artifacts = PlannerArtifacts(
+        planner_mode="decomposed",
+        provider=getattr(client, "provider_name", "unknown"),
+        input_text=prompt,
+        system_prompt=system_prompt,
+        rag_query=rag_query,
+        rag_query_expansions=expand_knowledge_query(rag_query),
+        rag_context=rag_context,
+        rag_hits=rag_hits,
+        rag_categories=rag_summary["categories"],
+        rag_capabilities=rag_summary["capabilities"],
+        used_knowledge=_used_knowledge(rag_hits),
+        rag_quality=_rag_quality(rag_hits, rag_query),
+        provider_config=_provider_config_for_artifact(getattr(client, "provider_name", "unknown")),
+        provider_health=_provider_health_for_artifact(getattr(client, "provider_name", "unknown")),
+        provider_metadata=_provider_metadata_for_artifact(getattr(client, "provider_name", "unknown")),
+    )
+
+    feature_plan_raw = _complete_json_with_repair(
+        client,
+        system_prompt,
+        prompt,
+        artifacts,
+        invalid_error="Decomposed planner returned invalid feature-plan JSON.",
+    )
+    artifacts.decomposed_feature_plan_raw_json = feature_plan_raw
+    feature_plan, plan_warnings = _normalize_decomposed_feature_plan(feature_plan_raw, prompt, config)
+    artifacts.decomposed_feature_plan_json = feature_plan
+    artifacts.warnings.extend(plan_warnings)
+    if not feature_plan["features"]:
+        artifacts.error = "Decomposed planner produced no supported v1 feature plan entries."
+        raise LLMPlanningError(artifacts.error, artifacts)
+
+    composed_features: list[dict[str, Any]] = []
+    for planned_feature in feature_plan["features"]:
+        feature_system_prompt = _build_decomposed_feature_system_prompt(str(planned_feature["type"]), language)
+        feature_user_prompt = _decomposed_feature_user_prompt(prompt, feature_plan, planned_feature)
+        feature_record: dict[str, Any] = {
+            "planned": planned_feature,
+            "system_prompt": feature_system_prompt,
+            "user_prompt": feature_user_prompt,
+            "raw_json": None,
+            "feature": None,
+            "warnings": [],
+        }
+        try:
+            raw_feature = _complete_json_with_repair(
+                client,
+                feature_system_prompt,
+                feature_user_prompt,
+                artifacts,
+                invalid_error="Decomposed feature planner returned invalid JSON.",
+            )
+            feature_record["raw_json"] = raw_feature
+            feature, feature_warnings = _extract_decomposed_feature(raw_feature, planned_feature)
+            feature_record["warnings"].extend(feature_warnings)
+        except LLMPlanningError as exc:
+            feature = None
+            message = str(exc)
+            feature_record["warnings"].append(message)
+            artifacts.decomposed_bad_raw_outputs.append(
+                {
+                    "stage": "feature_json",
+                    "planned": planned_feature,
+                    "reason": message,
+                    "raw_text": exc.artifacts.raw_text,
+                    "raw_json": exc.artifacts.raw_json,
+                }
+            )
+
+        if feature is None:
+            artifacts.decomposed_bad_raw_outputs.append(
+                {
+                    "stage": "feature_json",
+                    "planned": planned_feature,
+                    "reason": "Could not extract the requested feature JSON; deterministic fallback was used.",
+                    "raw_text": artifacts.raw_text,
+                    "raw_json": feature_record.get("raw_json"),
+                }
+            )
+            feature = _fallback_decomposed_feature(planned_feature, feature_plan)
+            feature_record["warnings"].append("Used deterministic fallback feature JSON.")
+
+        feature_record["feature"] = feature
+        artifacts.decomposed_feature_json_outputs.append(feature_record)
+        composed_features.append(feature)
+
+    composed_raw = {
+        "mod_id": feature_plan["mod_id"],
+        "mod_name": feature_plan["mod_name"],
+        "package": feature_plan["package"],
+        "version": str(feature_plan.get("version", config.default_mod_version)),
+        "description": str(feature_plan.get("description", prompt)),
+        "authors": [str(author) for author in feature_plan.get("authors", [])],
+        "license_name": str(feature_plan.get("license_name", config.default_license_name)),
+        "features": composed_features,
+    }
+    artifacts.decomposed_composed_raw_json = composed_raw
+
+    normalized, warnings = _normalize_llm_output(composed_raw, prompt, config)
+    artifacts.normalized_json = normalized
+    artifacts.warnings.extend(warnings)
+    artifacts.raw_json = {
+        "feature_plan": feature_plan,
+        "feature_outputs": artifacts.decomposed_feature_json_outputs,
+        "composed_modspec_raw": composed_raw,
+    }
+    artifacts.raw_text = json.dumps(artifacts.raw_json, ensure_ascii=False, indent=2)
+
+    spec = ModSpec.from_dict(normalized)
+    report = validate_mod_spec(spec, config)
+    artifacts.schema_validation_attempts.append(_schema_validation_attempt(1, report))
+    if report.is_valid:
+        artifacts.warnings.extend(issue.message for issue in report.warnings)
+        return spec, artifacts
+
+    errors = [issue.message for issue in report.errors]
+    artifacts.warnings.extend(issue.message for issue in report.warnings)
+    artifacts.error = "Invalid decomposed ModSpec: " + "; ".join(errors)
     raise LLMPlanningError(artifacts.error, artifacts)
 
 
@@ -296,6 +443,15 @@ def write_planner_artifacts(project_dir: Path, config: AppConfig, artifacts: Pla
     if artifacts.normalized_json is not None:
         write_json(agent_dir / "llm-plan-normalized.json", artifacts.normalized_json)
 
+    if (
+        artifacts.decomposed_feature_plan_raw_json is not None
+        or artifacts.decomposed_feature_plan_json is not None
+        or artifacts.decomposed_feature_json_outputs
+        or artifacts.decomposed_composed_raw_json is not None
+        or artifacts.decomposed_bad_raw_outputs
+    ):
+        _write_decomposed_planner_artifacts(agent_dir, artifacts)
+
     write_json(agent_dir / "llm-plan-warnings.json", artifacts.warnings)
     write_json(
         agent_dir / "llm-stability.json",
@@ -344,6 +500,32 @@ def write_planner_artifacts(project_dir: Path, config: AppConfig, artifacts: Pla
             "",
         ]
         write_text(agent_dir / "llm-plan-error.md", "\n".join(lines))
+
+
+def _write_decomposed_planner_artifacts(agent_dir: Path, artifacts: PlannerArtifacts) -> None:
+    decomposed_dir = ensure_directory(agent_dir / "decomposed-planner")
+    if artifacts.decomposed_feature_plan_raw_json is not None:
+        write_json(decomposed_dir / "feature-plan-raw.json", artifacts.decomposed_feature_plan_raw_json)
+    if artifacts.decomposed_feature_plan_json is not None:
+        write_json(decomposed_dir / "feature-plan.json", artifacts.decomposed_feature_plan_json)
+    if artifacts.decomposed_composed_raw_json is not None:
+        write_json(decomposed_dir / "composed-modspec-raw.json", artifacts.decomposed_composed_raw_json)
+    if artifacts.decomposed_feature_json_outputs:
+        feature_json_dir = ensure_directory(decomposed_dir / "feature-json")
+        write_json(decomposed_dir / "feature-jsons.json", artifacts.decomposed_feature_json_outputs)
+        for index, record in enumerate(artifacts.decomposed_feature_json_outputs, start=1):
+            planned = record.get("planned") if isinstance(record.get("planned"), dict) else {}
+            feature_type = slugify_mod_id(str(planned.get("type", "feature")), fallback="feature")
+            feature_id = slugify_mod_id(str(planned.get("id", f"feature_{index}")), fallback=f"feature_{index}")
+            write_json(feature_json_dir / f"{index:02d}-{feature_type}-{feature_id}.json", record)
+    if artifacts.decomposed_bad_raw_outputs:
+        bad_dir = ensure_directory(decomposed_dir / "bad-raw-output")
+        write_json(decomposed_dir / "bad-raw-outputs.json", artifacts.decomposed_bad_raw_outputs)
+        for index, record in enumerate(artifacts.decomposed_bad_raw_outputs, start=1):
+            write_json(bad_dir / f"{index:02d}-bad-raw-output.json", record)
+            raw_text = str(record.get("raw_text", ""))
+            if raw_text:
+                write_text(bad_dir / f"{index:02d}-bad-raw-output.txt", raw_text)
 
 
 def _complete_json_with_repair(
@@ -690,6 +872,221 @@ def _build_system_prompt(language: str, *, rag_context: str = "") -> str:
     return "\n".join(lines)
 
 
+def _build_decomposed_feature_plan_system_prompt(language: str, *, rag_context: str = "") -> str:
+    lines = [
+        "DECOMPOSED_FEATURE_PLAN_V1",
+        "You are a NeoForge ModSpec decomposition planner.",
+        "Return only one valid JSON object. Do not output Markdown.",
+        "Do not write Java, Gradle, registry code, resource JSON, or free-form patches.",
+        "First split the natural language request into a small feature plan.",
+        "V1 supports only these feature types: item, ore, machine, tool, sword, recipe, progression.",
+        "Use ore.worldgen for ore world generation; do not create a separate worldgen feature type.",
+        "Keep each plan entry small and debuggable; detailed fields can go under fields.",
+        "Every id must be snake_case and every dependency must reference another planned or existing id.",
+        f"Preferred natural language output locale: {language}.",
+        "",
+        "Return this JSON shape:",
+        "{",
+        '  "mod_id": "snake_case_mod_id",',
+        '  "mod_name": "Display Name",',
+        '  "package": "com.generated.snake_case_mod_id",',
+        '  "version": "0.1.0",',
+        '  "description": "short request summary",',
+        '  "features": [',
+        "    {",
+        '      "type": "item|ore|machine|tool|sword|recipe|progression",',
+        '      "id": "snake_case_id",',
+        '      "display_name_en_us": "Display Name",',
+        '      "intent": "short reason this feature exists",',
+        '      "depends_on": ["other_feature_id"],',
+        '      "fields": {}',
+        "    }",
+        "  ]",
+        "}",
+    ]
+    if rag_context:
+        lines.extend(["", rag_context])
+    return "\n".join(lines)
+
+
+def _build_decomposed_feature_system_prompt(feature_type: str, language: str) -> str:
+    return "\n".join(
+        [
+            "DECOMPOSED_FEATURE_JSON_V1",
+            "You fill one small NeoForge ModSpec feature JSON object from a feature plan entry.",
+            "Return only one valid JSON object. Do not output Markdown.",
+            "Do not output a full ModSpec. Do not write Java, Gradle, registry code, or resource files.",
+            f"The JSON object must use type '{feature_type}'.",
+            "Use only fields supported by the ModSpec schema for that feature type.",
+            "For ore, put world generation under worldgen with enabled=true when natural generation is requested.",
+            "For machines, use one machine feature and machine_kind rather than GUI or BlockEntity code.",
+            "For recipes, reference existing/generated ids with the mod namespace.",
+            "For progression, reference generated feature ids through stages and links.",
+            f"Preferred natural language output locale: {language}.",
+        ]
+    )
+
+
+def _decomposed_feature_user_prompt(prompt: str, feature_plan: dict[str, Any], planned_feature: dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            "Original request:",
+            prompt,
+            "",
+            "Mod metadata JSON:",
+            json.dumps(_compact_decomposed_mod_metadata(feature_plan), ensure_ascii=False, indent=2),
+            "",
+            "Reference map JSON:",
+            json.dumps(_compact_decomposed_reference_map(feature_plan), ensure_ascii=False, indent=2),
+            "",
+            "Dependency summary JSON:",
+            json.dumps(_decomposed_dependency_summary(feature_plan, planned_feature), ensure_ascii=False, indent=2),
+            "",
+            "Field contract JSON:",
+            json.dumps(_decomposed_field_contract(str(planned_feature.get("type", ""))), ensure_ascii=False, indent=2),
+            "",
+            "Target feature plan item JSON:",
+            json.dumps(planned_feature, ensure_ascii=False, indent=2),
+            "",
+            "Return only the target feature JSON object.",
+        ]
+    )
+
+
+def _compact_decomposed_mod_metadata(feature_plan: dict[str, Any]) -> dict[str, Any]:
+    authors = feature_plan.get("authors", [])
+    if not isinstance(authors, list):
+        authors = []
+    return {
+        "mod_id": str(feature_plan.get("mod_id", "")),
+        "mod_name": str(feature_plan.get("mod_name", "")),
+        "package": str(feature_plan.get("package", "")),
+        "version": str(feature_plan.get("version", "")),
+        "description": str(feature_plan.get("description", "")),
+        "authors": [str(author) for author in authors],
+        "license_name": str(feature_plan.get("license_name", "")),
+    }
+
+
+def _compact_decomposed_reference_map(feature_plan: dict[str, Any]) -> list[dict[str, Any]]:
+    mod_id = str(feature_plan.get("mod_id", ""))
+    references: list[dict[str, Any]] = []
+    features = feature_plan.get("features", [])
+    if not isinstance(features, list):
+        return references
+    for feature in features:
+        if not isinstance(feature, dict):
+            continue
+        feature_id = str(feature.get("id", ""))
+        depends_on = feature.get("depends_on", [])
+        references.append(
+            {
+                "type": str(feature.get("type", "")),
+                "id": feature_id,
+                "resource_id": _decomposed_resource_id(mod_id, feature_id),
+                "display_name_en_us": str(feature.get("display_name_en_us", "")),
+                "depends_on": [str(item) for item in depends_on] if isinstance(depends_on, list) else [],
+            }
+        )
+    return references
+
+
+def _decomposed_dependency_summary(feature_plan: dict[str, Any], planned_feature: dict[str, Any]) -> list[dict[str, Any]]:
+    depends_on = planned_feature.get("depends_on", [])
+    if not isinstance(depends_on, list):
+        return []
+    references = {str(item.get("id", "")): item for item in _compact_decomposed_reference_map(feature_plan)}
+    mod_id = str(feature_plan.get("mod_id", ""))
+    summary: list[dict[str, Any]] = []
+    for dependency in depends_on:
+        dependency_id = str(dependency)
+        if dependency_id in references:
+            summary.append(references[dependency_id])
+        else:
+            summary.append(
+                {
+                    "id": dependency_id,
+                    "resource_id": _decomposed_resource_id(mod_id, dependency_id),
+                    "missing_from_reference_map": True,
+                }
+            )
+    return summary
+
+
+def _decomposed_resource_id(mod_id: str, feature_id: str) -> str:
+    if not feature_id:
+        return ""
+    if ":" in feature_id:
+        return feature_id
+    if mod_id:
+        return f"{mod_id}:{feature_id}"
+    return feature_id
+
+
+def _decomposed_field_contract(feature_type: str) -> dict[str, Any]:
+    base = {
+        "required": ["type", "id", "display_name_en_us"],
+        "shared_optional": ["display_name_zh_cn", "behavior"],
+    }
+    contracts: dict[str, dict[str, Any]] = {
+        "item": {
+            **base,
+            "optional": ["max_stack_size", "rarity", "fire_resistant", "food"],
+        },
+        "ore": {
+            **base,
+            "optional": [
+                "drop",
+                "strength",
+                "resistance",
+                "sound",
+                "requires_correct_tool",
+                "tool_tier",
+                "worldgen",
+            ],
+            "worldgen": ["enabled", "dimension", "min_y", "max_y", "vein_size", "veins_per_chunk"],
+        },
+        "machine": {
+            **base,
+            "optional": [
+                "machine_kind",
+                "inventory_slots",
+                "input_slots",
+                "output_slots",
+                "energy_capacity",
+                "energy_per_tick",
+                "max_progress",
+                "menu_title",
+            ],
+        },
+        "tool": {
+            **base,
+            "optional": ["tool_type", "tool_material", "attack_damage_bonus", "attack_speed", "durability"],
+        },
+        "sword": {
+            **base,
+            "optional": ["tool_material", "attack_damage_bonus", "attack_speed", "durability", "on_hit"],
+        },
+        "recipe": {
+            **base,
+            "optional": ["recipe_type", "ingredients", "pattern", "keys", "result", "count", "category", "group"],
+        },
+        "progression": {
+            **base,
+            "optional": ["title", "summary", "entry_stage", "end_stage", "stages", "links"],
+            "stage_fields": ["id", "type", "title", "requires", "provides", "unlocks", "evidence"],
+            "link_fields": ["from", "to", "trigger", "requirement"],
+        },
+    }
+    return contracts.get(
+        feature_type,
+        {
+            **base,
+            "optional": [],
+        },
+    )
+
+
 def _build_modify_system_prompt(language: str, *, rag_context: str = "") -> str:
     schema = json.dumps(get_modspec_schema(), ensure_ascii=False, indent=2)
     lines = [
@@ -824,6 +1221,334 @@ def _render_rag_context_md(artifacts: PlannerArtifacts) -> str:
         lines.append(f"- `{hit.get('id')}` score={hit.get('score')}: {hit.get('title')}")
     lines.extend(["", "## Context", "", "```text", artifacts.rag_context, "```", ""])
     return "\n".join(lines)
+
+
+def _normalize_decomposed_feature_plan(raw: dict, prompt: str, config: AppConfig) -> tuple[dict[str, Any], list[str]]:
+    warnings: list[str] = []
+    plan_source = raw.get("feature_plan") if isinstance(raw.get("feature_plan"), dict) else raw
+    mod_id = slugify_mod_id(str(plan_source.get("mod_id", plan_source.get("id", plan_source.get("mod_name", prompt)))))
+    mod_name = str(plan_source.get("mod_name", plan_source.get("display_name", derive_display_name(mod_id)))) or derive_display_name(mod_id)
+    package_name = str(plan_source.get("package", plan_source.get("package_name", derive_package_name(mod_id, config.default_group_prefix))))
+
+    raw_features: list[dict[str, Any]] = []
+    for candidate_source in (plan_source, raw):
+        if not isinstance(candidate_source, dict):
+            continue
+        features = candidate_source.get("features")
+        if isinstance(features, list):
+            raw_features.extend(feature for feature in features if isinstance(feature, dict))
+        raw_features.extend(feature for feature in _expand_typed_feature_lists(candidate_source) if isinstance(feature, dict))
+
+    seen: set[tuple[str, str]] = set()
+    planned_features: list[dict[str, Any]] = []
+    for raw_feature in raw_features:
+        planned = _planned_decomposed_feature_from_raw(raw_feature, warnings)
+        if planned is None:
+            continue
+        key = (str(planned["type"]), str(planned["id"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        planned_features.append(planned)
+
+    planned_features = _ensure_decomposed_material_items(planned_features, mod_id)
+    planned_features = _sort_decomposed_features(planned_features)
+    planned_features = _trim_decomposed_progression_references(planned_features)
+    return (
+        {
+            "mod_id": mod_id,
+            "mod_name": mod_name,
+            "package": package_name,
+            "version": str(plan_source.get("version", config.default_mod_version)),
+            "description": str(plan_source.get("description", prompt)),
+            "authors": [str(author) for author in plan_source.get("authors", [])],
+            "license_name": str(plan_source.get("license_name", config.default_license_name)),
+            "features": planned_features,
+        },
+        warnings,
+    )
+
+
+def _trim_decomposed_progression_references(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    known_ids = {str(feature.get("id")) for feature in features if feature.get("id")}
+    for feature in features:
+        if feature.get("type") != "progression":
+            continue
+        fields = feature.get("fields") if isinstance(feature.get("fields"), dict) else {}
+        raw_stages = fields.get("stages") if isinstance(fields.get("stages"), list) else []
+        kept_stages: list[dict[str, Any]] = []
+        kept_stage_ids: set[str] = set()
+        for raw_stage in raw_stages:
+            if not isinstance(raw_stage, dict):
+                continue
+            stage = dict(raw_stage)
+            for key in ("requires", "provides", "unlocks", "evidence"):
+                values = stage.get(key) if isinstance(stage.get(key), list) else []
+                stage[key] = [str(value) for value in values if _decomposed_ref_known(str(value), known_ids)]
+            stage_id = slugify_mod_id(str(stage.get("id", stage.get("identifier", stage.get("title", "stage")))), fallback="stage")
+            has_known_reference = any(stage.get(key) for key in ("requires", "provides", "unlocks", "evidence"))
+            if not has_known_reference and stage_id not in known_ids:
+                continue
+            stage["id"] = stage_id
+            kept_stage_ids.add(stage_id)
+            kept_stages.append(stage)
+
+        if kept_stages:
+            fields["stages"] = kept_stages
+            fields["entry_stage"] = str(fields.get("entry_stage", "")) if str(fields.get("entry_stage", "")) in kept_stage_ids else str(kept_stages[0]["id"])
+            fields["end_stage"] = str(fields.get("end_stage", "")) if str(fields.get("end_stage", "")) in kept_stage_ids else str(kept_stages[-1]["id"])
+            raw_links = fields.get("links") if isinstance(fields.get("links"), list) else []
+            fields["links"] = [
+                link
+                for link in raw_links
+                if isinstance(link, dict)
+                and str(link.get("from", link.get("from_stage", ""))) in kept_stage_ids
+                and str(link.get("to", link.get("to_stage", ""))) in kept_stage_ids
+            ]
+        feature["fields"] = fields
+    return features
+
+
+def _decomposed_ref_known(reference: str, known_ids: set[str]) -> bool:
+    value = reference.split(":", 1)[1] if ":" in reference else reference
+    return value in known_ids
+
+
+def _planned_decomposed_feature_from_raw(feature: dict[str, Any], warnings: list[str]) -> dict[str, Any] | None:
+    feature_type = str(feature.get("type", feature.get("feature_type", ""))).strip().lower()
+    if feature_type == "worldgen":
+        feature_type = "ore"
+    if feature_type not in DECOMPOSED_PLANNER_FEATURE_TYPES:
+        if feature_type:
+            warnings.append(f"Decomposed planner v1 ignored unsupported feature type: {feature_type}")
+        return None
+
+    display_name = str(feature.get("display_name_en_us", feature.get("display_name", ""))).strip()
+    identifier_source = str(feature.get("id", feature.get("identifier", display_name))).strip()
+    identifier = slugify_mod_id(identifier_source, fallback=f"generated_{feature_type}")
+    if not display_name:
+        display_name = derive_display_name(identifier)
+
+    fields = dict(feature.get("fields")) if isinstance(feature.get("fields"), dict) else {}
+    for key, value in feature.items():
+        if key in {"intent", "depends_on", "dependencies", "fields"}:
+            continue
+        fields.setdefault(key, value)
+
+    depends_on = feature.get("depends_on", feature.get("dependencies", []))
+    if not isinstance(depends_on, list):
+        depends_on = [depends_on] if depends_on else []
+
+    return {
+        "type": feature_type,
+        "id": identifier,
+        "display_name_en_us": display_name,
+        "intent": str(feature.get("intent", feature.get("description", ""))),
+        "depends_on": [slugify_mod_id(str(item), fallback="dependency") for item in depends_on if str(item).strip()],
+        "fields": fields,
+    }
+
+
+def _ensure_decomposed_material_items(features: list[dict[str, Any]], mod_id: str) -> list[dict[str, Any]]:
+    existing_ids = {str(feature["id"]) for feature in features}
+    required_ids: list[str] = []
+    vanilla_tool_materials = {"wood", "stone", "iron", "diamond", "gold", "golden", "netherite", "copper"}
+    for feature in features:
+        fields = feature.get("fields") if isinstance(feature.get("fields"), dict) else {}
+        if feature.get("type") == "ore":
+            drop = str(fields.get("drop", ""))
+            if drop.startswith(f"{mod_id}:"):
+                required_ids.append(drop.split(":", 1)[1])
+        if feature.get("type") in {"tool", "sword"}:
+            material = slugify_mod_id(str(fields.get("tool_material", "")), fallback="")
+            if material and material not in vanilla_tool_materials:
+                required_ids.append(material)
+
+    injected: list[dict[str, Any]] = []
+    for identifier in required_ids:
+        if identifier in existing_ids:
+            continue
+        existing_ids.add(identifier)
+        injected.append(
+            {
+                "type": "item",
+                "id": identifier,
+                "display_name_en_us": derive_display_name(identifier),
+                "intent": "Material item required by decomposed feature references.",
+                "depends_on": [],
+                "fields": {
+                    "type": "item",
+                    "id": identifier,
+                    "display_name_en_us": derive_display_name(identifier),
+                },
+            }
+        )
+    return [*injected, *features]
+
+
+def _sort_decomposed_features(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    priority = {
+        "item": 0,
+        "ore": 10,
+        "machine": 20,
+        "tool": 30,
+        "sword": 30,
+        "recipe": 40,
+        "progression": 50,
+    }
+    return [feature for _, feature in sorted(enumerate(features), key=lambda item: (priority.get(str(item[1].get("type")), 99), item[0]))]
+
+
+def _extract_decomposed_feature(raw: dict[str, Any], planned: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
+    warnings: list[str] = []
+    candidates = _decomposed_feature_candidates(raw)
+    if not candidates:
+        return None, ["Feature JSON response did not contain a feature object."]
+
+    planned_type = str(planned["type"])
+    planned_id = str(planned["id"])
+    candidate = next(
+        (
+            item
+            for item in candidates
+            if str(item.get("type", "")).lower() == planned_type
+            and slugify_mod_id(str(item.get("id", item.get("identifier", ""))), fallback="") == planned_id
+        ),
+        None,
+    )
+    if candidate is None:
+        candidate = next((item for item in candidates if str(item.get("type", "")).lower() == planned_type), None)
+    if candidate is None:
+        return None, [f"Feature JSON response did not contain requested type/id: {planned_type}/{planned_id}."]
+
+    feature = _flatten_decomposed_feature(candidate, planned)
+    raw_type = str(feature.get("type", "")).lower()
+    raw_id = slugify_mod_id(str(feature.get("id", feature.get("identifier", ""))), fallback="")
+    if raw_type and raw_type != planned_type:
+        warnings.append(f"Feature JSON type '{raw_type}' was forced to planned type '{planned_type}'.")
+    if raw_id and raw_id != planned_id:
+        warnings.append(f"Feature JSON id '{raw_id}' was forced to planned id '{planned_id}'.")
+    feature["type"] = planned_type
+    feature["id"] = planned_id
+    feature.setdefault("display_name_en_us", planned.get("display_name_en_us", derive_display_name(planned_id)))
+    return feature, warnings
+
+
+def _decomposed_feature_candidates(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    if isinstance(raw.get("feature"), dict):
+        candidates.append(raw["feature"])
+    if raw.get("type") or raw.get("feature_type"):
+        candidates.append(raw)
+    features = raw.get("features")
+    if isinstance(features, list):
+        candidates.extend(item for item in features if isinstance(item, dict))
+    candidates.extend(item for item in _expand_typed_feature_lists(raw) if isinstance(item, dict))
+    return candidates
+
+
+def _flatten_decomposed_feature(candidate: dict[str, Any], planned: dict[str, Any]) -> dict[str, Any]:
+    fields = dict(planned.get("fields")) if isinstance(planned.get("fields"), dict) else {}
+    if isinstance(candidate.get("fields"), dict):
+        fields.update(candidate["fields"])
+    for key, value in candidate.items():
+        if key in {"intent", "depends_on", "dependencies", "fields"}:
+            continue
+        fields[key] = value
+    fields.setdefault("type", planned.get("type"))
+    fields.setdefault("id", planned.get("id"))
+    fields.setdefault("display_name_en_us", planned.get("display_name_en_us", derive_display_name(str(planned.get("id", "feature")))))
+    return fields
+
+
+def _fallback_decomposed_feature(planned: dict[str, Any], feature_plan: dict[str, Any]) -> dict[str, Any]:
+    feature = _flatten_decomposed_feature({}, planned)
+    feature_type = str(planned["type"])
+    identifier = str(planned["id"])
+    mod_id = str(feature_plan["mod_id"])
+    feature["type"] = feature_type
+    feature["id"] = identifier
+    feature.setdefault("display_name_en_us", derive_display_name(identifier))
+
+    if feature_type == "ore":
+        material_id = identifier.removesuffix("_ore") or identifier
+        feature.setdefault("drop", f"{mod_id}:{material_id}")
+        feature.setdefault("strength", 3.0)
+        feature.setdefault("resistance", 3.0)
+        feature.setdefault("sound", "stone")
+        feature.setdefault("requires_correct_tool", True)
+        feature.setdefault("tool_tier", "iron")
+        feature.setdefault(
+            "worldgen",
+            {
+                "enabled": True,
+                "dimension": "minecraft:overworld",
+                "min_y": -64,
+                "max_y": 32,
+                "vein_size": 6,
+                "veins_per_chunk": 4,
+            },
+        )
+    elif feature_type == "machine":
+        feature.setdefault("machine_kind", "compressor")
+        feature.setdefault("inventory_slots", 2)
+        feature.setdefault("input_slots", 1)
+        feature.setdefault("output_slots", 1)
+        feature.setdefault("energy_capacity", 10000)
+        feature.setdefault("energy_per_tick", 20)
+        feature.setdefault("max_progress", 100)
+        feature.setdefault("menu_title", feature.get("display_name_en_us", derive_display_name(identifier)))
+    elif feature_type == "tool":
+        tool_type = next((value for value in SUPPORTED_TOOL_TYPES if identifier.endswith(f"_{value}")), "pickaxe")
+        material = identifier.removesuffix(f"_{tool_type}") if identifier.endswith(f"_{tool_type}") else "iron"
+        damage, speed = _tool_defaults(tool_type)
+        feature.setdefault("tool_type", tool_type)
+        feature.setdefault("tool_material", material or "iron")
+        feature.setdefault("attack_damage_bonus", damage)
+        feature.setdefault("attack_speed", speed)
+    elif feature_type == "sword":
+        material = identifier.removesuffix("_sword") if identifier.endswith("_sword") else "iron"
+        feature.setdefault("tool_material", material or "iron")
+        feature.setdefault("attack_damage_bonus", 4.0)
+        feature.setdefault("attack_speed", -2.4)
+    elif feature_type == "recipe":
+        material_id = _first_decomposed_item_id(feature_plan) or "ruby"
+        result_id = identifier
+        feature.setdefault("recipe_type", "shapeless")
+        feature.setdefault("ingredients", [f"{mod_id}:{material_id}"])
+        feature.setdefault("result", f"{mod_id}:{result_id}")
+        feature.setdefault("count", 1)
+        feature.setdefault("category", "misc")
+    elif feature_type == "progression":
+        stage_ids = [str(item["id"]) for item in feature_plan.get("features", []) if item.get("id") != identifier]
+        first_stage = stage_ids[0] if stage_ids else "start"
+        last_stage = stage_ids[-1] if stage_ids else first_stage
+        feature.setdefault("title", derive_display_name(identifier))
+        feature.setdefault("summary", "Decomposed progression generated from the feature plan.")
+        feature.setdefault("entry_stage", first_stage)
+        feature.setdefault("end_stage", last_stage)
+        feature.setdefault(
+            "stages",
+            [
+                {
+                    "id": slugify_mod_id(stage_id, fallback="stage"),
+                    "type": "milestone",
+                    "title": derive_display_name(stage_id),
+                    "evidence": [stage_id],
+                }
+                for stage_id in stage_ids[:8]
+            ]
+            or [{"id": "start", "type": "milestone", "title": "Start"}],
+        )
+        feature.setdefault("links", [])
+    return feature
+
+
+def _first_decomposed_item_id(feature_plan: dict[str, Any]) -> str | None:
+    for feature in feature_plan.get("features", []):
+        if isinstance(feature, dict) and feature.get("type") == "item":
+            return str(feature.get("id"))
+    return None
 
 
 def _normalize_llm_output(raw: dict, prompt: str, config: AppConfig) -> tuple[dict, list[str]]:

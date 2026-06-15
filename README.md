@@ -5,7 +5,7 @@ NeoForge Mod Agent 是一个面向 Minecraft NeoForge 的受控 Coding Agent：�
 当前主线（RC3-candidate development e2e showcase）：
 ```text
 Natural language
--> planner / ModSpec
+-> planner / feature plan / ModSpec
 -> deterministic generator baseline
 -> Java / JSON / resource artifacts
 -> modify existing workspace
@@ -25,6 +25,7 @@ $env:PYTHONPATH = (Resolve-Path .\src)
 py -3.11 -m agent.cli doctor --no-java --json
 py -3.11 -m agent.cli showcase --run-name development-e2e-smoke --llm-provider mock --no-build --json
 py -3.11 -m agent.cli eval --cases examples/agent_development_e2e.json --llm-provider mock --audit --no-build --json
+py -3.11 -m agent.cli eval --cases examples/agent_development_e2e.json --planner decomposed --llm-provider mock --audit --no-build --json
 py -3.11 -m agent.cli agent develop "Create a ruby mod with a ruby item, ruby block and ruby ore." --planner llm --llm-provider mock --workspace-name demo-ruby-rc1 --no-build --json
 py -3.11 -m agent.cli agent repair demo-ruby-rc1 --goal "Fix audit failures using safe structured patches." --planner llm --llm-provider mock --max-iterations 5 --no-build --audit --json
 py -3.11 -m agent.cli audit demo-ruby-rc1 --json
@@ -36,6 +37,8 @@ py -3.11 -m unittest discover -s tests -v
 ```
 
 `examples/agent_development_e2e.json` 是当前推荐的端到端开发 suite：从自然语言生成 ruby progression loop，覆盖 ore/worldgen、compressor machine、ruby tools、progression report；再从已有 ruby mod 追加 worldgen，并用 repeat modify 验证同一需求不会重复添加。`examples/agentic_rag_ablation.json` 是 3-case 快速 smoke；`examples/agent_benchmark_repair_18.json` 是固定完整 repair suite，覆盖 metadata、asset/resource、data/worldgen 和 generated-code audit 故障；`--repair-holdout` 会按 seed 生成不同 material/mod/resource 名的随机 holdout。当前推荐展示路径是 `showcase`、`eval --cases examples/agent_development_e2e.json`，repair/RAG benchmark 作为可靠性补充。
+
+`--planner decomposed` 是 Decomposed Planner v1：先把自然语言拆成 `feature-plan.json`，再按 `item/ore/machine/tool/sword/recipe/progression` 生成小 JSON，组合回 `ModSpec` 后继续走 generator、audit/build 和 report。运行后可在 workspace 的 `.agent/decomposed-planner/` 查看 `feature-plan.json`、`feature-jsons.json`、`composed-modspec-raw.json` 和坏输出记录；它不是 RAG/Milvus 扩展，也不是让 LLM 接管完整 Java generator。
 
 ## Public Release Package
 

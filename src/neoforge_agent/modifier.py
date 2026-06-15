@@ -100,6 +100,23 @@ class WorkspaceModifier:
             patch = self._rules_patch(existing, change_request)
             return patch, None, [], "rules"
 
+        if planner_mode == "decomposed":
+            patch, artifacts, warnings, mode_used = self.plan_modification(
+                existing,
+                change_request,
+                planner_mode="llm",
+                llm_provider=llm_provider,
+            )
+            return (
+                patch,
+                artifacts,
+                [
+                    "Decomposed planner v1 uses the existing controlled LLM patch planner for modify requests.",
+                    *warnings,
+                ],
+                f"decomposed->{mode_used}",
+            )
+
         if planner_mode == "llm":
             health = check_llm_provider_health(llm_provider)
             if llm_provider == "openai-compatible" and not health.healthy:

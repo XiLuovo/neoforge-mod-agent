@@ -68,6 +68,35 @@ class AgentEvalTests(unittest.TestCase):
             self.assertTrue(repeat.repeat_modify_success)
             self.assertIn("ruby_ore", repeat.repeat_modify_skipped)
 
+    def test_decomposed_planner_development_e2e_suite(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = replace(test_config(Path(tmp)), project_root=PROJECT_ROOT)
+
+            result = BenchmarkEvaluator(config).run(
+                cases_path=PROJECT_ROOT / "examples" / "agent_development_e2e.json",
+                planner_mode="decomposed",
+                llm_provider="mock",
+                run_build=False,
+                run_audit=True,
+                run_name="unit-decomposed-development-e2e",
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.planner_mode, "decomposed")
+            self.assertEqual(result.metrics["expected_feature_match_rate"], 1.0)
+            self.assertEqual(result.metrics["expected_category_match_rate"], 1.0)
+            generate_workspace = Path(result.cases[0].workspace or "")
+            feature_plan_path = generate_workspace / ".agent" / "decomposed-planner" / "feature-plan.json"
+            feature_jsons_path = generate_workspace / ".agent" / "decomposed-planner" / "feature-jsons.json"
+            self.assertTrue(feature_plan_path.exists())
+            self.assertTrue(feature_jsons_path.exists())
+            feature_jsons = json.loads(feature_jsons_path.read_text(encoding="utf-8"))
+            feature_prompts = [str(record.get("user_prompt", "")) for record in feature_jsons]
+            self.assertTrue(feature_prompts)
+            self.assertLess(max(len(prompt) for prompt in feature_prompts), 14_000)
+            self.assertTrue(all("Feature plan JSON:" not in prompt for prompt in feature_prompts))
+            self.assertTrue(all("Reference map JSON:" in prompt for prompt in feature_prompts))
+
     def test_agent_repair_executes_safe_loop_after_audit_failure(self) -> None:
         class BreakBeforeAuditOrchestrator(AgentOrchestrator):
             def __init__(self, config: AppConfig) -> None:
