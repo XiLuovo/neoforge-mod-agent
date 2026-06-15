@@ -32,7 +32,13 @@ from neoforge_agent import (
     write_planner_artifacts,
 )
 from neoforge_agent.llm_client import LLMCompletion
-from neoforge_agent.llm_planner import _build_modify_system_prompt, _build_system_prompt, plan_with_decomposed_llm, plan_with_llm
+from neoforge_agent.llm_planner import (
+    _build_modify_system_prompt,
+    _build_system_prompt,
+    _decomposed_feature_user_prompt,
+    plan_with_decomposed_llm,
+    plan_with_llm,
+)
 
 
 def test_config(workspace_root: Path) -> AppConfig:
@@ -220,6 +226,62 @@ class LLMStabilityTests(unittest.TestCase):
             self.assertTrue((decomposed_dir / "feature-plan.json").exists())
             self.assertTrue((decomposed_dir / "feature-jsons.json").exists())
             self.assertTrue((decomposed_dir / "bad-raw-outputs.json").exists())
+
+    def test_decomposed_feature_prompt_uses_slim_context(self) -> None:
+        sibling_sentinel = "SIBLING_FULL_FIELDS_SHOULD_NOT_LEAK"
+        feature_plan = {
+            "mod_id": "ruby_mod",
+            "mod_name": "Ruby Mod",
+            "package": "com.generated.ruby_mod",
+            "version": "0.1.0",
+            "description": "Synthetic prompt slimming fixture.",
+            "authors": ["Codex"],
+            "license_name": "MIT",
+            "features": [
+                {
+                    "type": "item",
+                    "id": "ruby",
+                    "display_name_en_us": "Ruby",
+                    "intent": "Material item.",
+                    "depends_on": [],
+                    "fields": {"huge_payload": sibling_sentinel * 80},
+                },
+                {
+                    "type": "ore",
+                    "id": "ruby_ore",
+                    "display_name_en_us": "Ruby Ore",
+                    "intent": "Overworld ore.",
+                    "depends_on": ["ruby"],
+                    "fields": {
+                        "drop": "ruby_mod:ruby",
+                        "worldgen": {
+                            "enabled": True,
+                            "dimension": "minecraft:overworld",
+                            "min_y": -64,
+                            "max_y": 32,
+                            "vein_size": 6,
+                            "veins_per_chunk": 4,
+                        },
+                    },
+                },
+            ],
+        }
+
+        prompt = _decomposed_feature_user_prompt(
+            "Create a ruby mod with ore worldgen.",
+            feature_plan,
+            feature_plan["features"][1],
+        )
+
+        self.assertNotIn("Feature plan JSON:", prompt)
+        self.assertNotIn(sibling_sentinel, prompt)
+        self.assertIn("Mod metadata JSON:", prompt)
+        self.assertIn("Reference map JSON:", prompt)
+        self.assertIn("Dependency summary JSON:", prompt)
+        self.assertIn("Field contract JSON:", prompt)
+        self.assertIn("Target feature plan item JSON:", prompt)
+        self.assertIn('"resource_id": "ruby_mod:ruby"', prompt)
+        self.assertLess(len(prompt), 4_000)
 
     def test_system_prompts_include_real_llm_modspec_contract(self) -> None:
         create_prompt = _build_system_prompt("zh_cn")

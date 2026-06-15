@@ -933,14 +933,157 @@ def _decomposed_feature_user_prompt(prompt: str, feature_plan: dict[str, Any], p
             "Original request:",
             prompt,
             "",
-            "Feature plan JSON:",
-            json.dumps(feature_plan, ensure_ascii=False, indent=2),
+            "Mod metadata JSON:",
+            json.dumps(_compact_decomposed_mod_metadata(feature_plan), ensure_ascii=False, indent=2),
+            "",
+            "Reference map JSON:",
+            json.dumps(_compact_decomposed_reference_map(feature_plan), ensure_ascii=False, indent=2),
+            "",
+            "Dependency summary JSON:",
+            json.dumps(_decomposed_dependency_summary(feature_plan, planned_feature), ensure_ascii=False, indent=2),
+            "",
+            "Field contract JSON:",
+            json.dumps(_decomposed_field_contract(str(planned_feature.get("type", ""))), ensure_ascii=False, indent=2),
             "",
             "Target feature plan item JSON:",
             json.dumps(planned_feature, ensure_ascii=False, indent=2),
             "",
             "Return only the target feature JSON object.",
         ]
+    )
+
+
+def _compact_decomposed_mod_metadata(feature_plan: dict[str, Any]) -> dict[str, Any]:
+    authors = feature_plan.get("authors", [])
+    if not isinstance(authors, list):
+        authors = []
+    return {
+        "mod_id": str(feature_plan.get("mod_id", "")),
+        "mod_name": str(feature_plan.get("mod_name", "")),
+        "package": str(feature_plan.get("package", "")),
+        "version": str(feature_plan.get("version", "")),
+        "description": str(feature_plan.get("description", "")),
+        "authors": [str(author) for author in authors],
+        "license_name": str(feature_plan.get("license_name", "")),
+    }
+
+
+def _compact_decomposed_reference_map(feature_plan: dict[str, Any]) -> list[dict[str, Any]]:
+    mod_id = str(feature_plan.get("mod_id", ""))
+    references: list[dict[str, Any]] = []
+    features = feature_plan.get("features", [])
+    if not isinstance(features, list):
+        return references
+    for feature in features:
+        if not isinstance(feature, dict):
+            continue
+        feature_id = str(feature.get("id", ""))
+        depends_on = feature.get("depends_on", [])
+        references.append(
+            {
+                "type": str(feature.get("type", "")),
+                "id": feature_id,
+                "resource_id": _decomposed_resource_id(mod_id, feature_id),
+                "display_name_en_us": str(feature.get("display_name_en_us", "")),
+                "depends_on": [str(item) for item in depends_on] if isinstance(depends_on, list) else [],
+            }
+        )
+    return references
+
+
+def _decomposed_dependency_summary(feature_plan: dict[str, Any], planned_feature: dict[str, Any]) -> list[dict[str, Any]]:
+    depends_on = planned_feature.get("depends_on", [])
+    if not isinstance(depends_on, list):
+        return []
+    references = {str(item.get("id", "")): item for item in _compact_decomposed_reference_map(feature_plan)}
+    mod_id = str(feature_plan.get("mod_id", ""))
+    summary: list[dict[str, Any]] = []
+    for dependency in depends_on:
+        dependency_id = str(dependency)
+        if dependency_id in references:
+            summary.append(references[dependency_id])
+        else:
+            summary.append(
+                {
+                    "id": dependency_id,
+                    "resource_id": _decomposed_resource_id(mod_id, dependency_id),
+                    "missing_from_reference_map": True,
+                }
+            )
+    return summary
+
+
+def _decomposed_resource_id(mod_id: str, feature_id: str) -> str:
+    if not feature_id:
+        return ""
+    if ":" in feature_id:
+        return feature_id
+    if mod_id:
+        return f"{mod_id}:{feature_id}"
+    return feature_id
+
+
+def _decomposed_field_contract(feature_type: str) -> dict[str, Any]:
+    base = {
+        "required": ["type", "id", "display_name_en_us"],
+        "shared_optional": ["display_name_zh_cn", "behavior"],
+    }
+    contracts: dict[str, dict[str, Any]] = {
+        "item": {
+            **base,
+            "optional": ["max_stack_size", "rarity", "fire_resistant", "food"],
+        },
+        "ore": {
+            **base,
+            "optional": [
+                "drop",
+                "strength",
+                "resistance",
+                "sound",
+                "requires_correct_tool",
+                "tool_tier",
+                "worldgen",
+            ],
+            "worldgen": ["enabled", "dimension", "min_y", "max_y", "vein_size", "veins_per_chunk"],
+        },
+        "machine": {
+            **base,
+            "optional": [
+                "machine_kind",
+                "inventory_slots",
+                "input_slots",
+                "output_slots",
+                "energy_capacity",
+                "energy_per_tick",
+                "max_progress",
+                "menu_title",
+            ],
+        },
+        "tool": {
+            **base,
+            "optional": ["tool_type", "tool_material", "attack_damage_bonus", "attack_speed", "durability"],
+        },
+        "sword": {
+            **base,
+            "optional": ["tool_material", "attack_damage_bonus", "attack_speed", "durability", "on_hit"],
+        },
+        "recipe": {
+            **base,
+            "optional": ["recipe_type", "ingredients", "pattern", "keys", "result", "count", "category", "group"],
+        },
+        "progression": {
+            **base,
+            "optional": ["title", "summary", "entry_stage", "end_stage", "stages", "links"],
+            "stage_fields": ["id", "type", "title", "requires", "provides", "unlocks", "evidence"],
+            "link_fields": ["from", "to", "trigger", "requirement"],
+        },
+    }
+    return contracts.get(
+        feature_type,
+        {
+            **base,
+            "optional": [],
+        },
     )
 
 

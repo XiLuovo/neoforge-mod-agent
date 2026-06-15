@@ -86,8 +86,16 @@ class AgentEvalTests(unittest.TestCase):
             self.assertEqual(result.metrics["expected_feature_match_rate"], 1.0)
             self.assertEqual(result.metrics["expected_category_match_rate"], 1.0)
             generate_workspace = Path(result.cases[0].workspace or "")
-            self.assertTrue((generate_workspace / ".agent" / "decomposed-planner" / "feature-plan.json").exists())
-            self.assertTrue((generate_workspace / ".agent" / "decomposed-planner" / "feature-jsons.json").exists())
+            feature_plan_path = generate_workspace / ".agent" / "decomposed-planner" / "feature-plan.json"
+            feature_jsons_path = generate_workspace / ".agent" / "decomposed-planner" / "feature-jsons.json"
+            self.assertTrue(feature_plan_path.exists())
+            self.assertTrue(feature_jsons_path.exists())
+            feature_jsons = json.loads(feature_jsons_path.read_text(encoding="utf-8"))
+            feature_prompts = [str(record.get("user_prompt", "")) for record in feature_jsons]
+            self.assertTrue(feature_prompts)
+            self.assertLess(max(len(prompt) for prompt in feature_prompts), 14_000)
+            self.assertTrue(all("Feature plan JSON:" not in prompt for prompt in feature_prompts))
+            self.assertTrue(all("Reference map JSON:" in prompt for prompt in feature_prompts))
 
     def test_agent_repair_executes_safe_loop_after_audit_failure(self) -> None:
         class BreakBeforeAuditOrchestrator(AgentOrchestrator):
