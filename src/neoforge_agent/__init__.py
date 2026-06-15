@@ -27,7 +27,7 @@ from .llm_client import LLMCompletion, LLMProviderConfig, LLMProviderHealth, LLM
 from .llm_engineering_report import LLMEngineeringReportResult, LLMEngineeringReportRunner
 from .llm_provider import LLMPricing, LLMProviderMetadata, LLMProviderRegistry, LLMRequestOptions, LLMStreamEvent, LLMUsage, estimate_llm_usage, estimate_tokens
 from .llm_eval_report import LLMEvalReportResult, RealLLMEvalReportRunner
-from .llm_planner import LLMPlanningError, PlannerArtifacts, plan_with_llm, write_planner_artifacts
+from .llm_planner import LLMPlanningError, PlannerArtifacts, plan_with_decomposed_llm, plan_with_llm, write_planner_artifacts
 from .llm_reviewer import LLMReviewResult, LLMReviewer
 from .modifier import MergeResult, ModifyResult, WorkspaceModifier, load_existing_modspec, merge_modspec, plan_modification
 from .models import (
@@ -300,6 +300,7 @@ __all__ = [
     "load_existing_modspec",
     "merge_modspec",
     "plan_modification",
+    "plan_with_decomposed_llm",
     "plan_with_llm",
     "inspect_llm_provider_config",
     "WorkspaceModifier",

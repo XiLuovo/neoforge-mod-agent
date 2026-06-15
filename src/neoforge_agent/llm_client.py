@@ -361,6 +361,12 @@ class MockLLMClient:
         if "TOOL_CALLING_REPAIR_AGENT" in system_prompt:
             payload = self._mock_repair_tool_payload(user_prompt)
             return self._completion(system_prompt, user_prompt, payload)
+        if "DECOMPOSED_FEATURE_PLAN_V1" in system_prompt:
+            payload = self._mock_decomposed_feature_plan_payload(user_prompt)
+            return self._completion(system_prompt, user_prompt, payload)
+        if "DECOMPOSED_FEATURE_JSON_V1" in system_prompt:
+            payload = self._mock_decomposed_feature_json_payload(user_prompt)
+            return self._completion(system_prompt, user_prompt, payload)
         is_modify = "existing modspec json" in prompt and "change request" in prompt
         if is_modify:
             payload = self._mock_modify_payload(user_prompt)
@@ -627,6 +633,131 @@ class MockLLMClient:
             }
 
         return self._completion(system_prompt, user_prompt, payload)
+
+    def _mock_decomposed_feature_plan_payload(self, user_prompt: str) -> dict:
+        source = self._mock_decomposed_source_payload(user_prompt)
+        features: list[dict[str, Any]] = []
+        for feature in source.get("features", []):
+            if not isinstance(feature, dict):
+                continue
+            feature_type = str(feature.get("type", "")).lower()
+            if feature_type not in {"item", "ore", "machine", "tool", "sword", "recipe", "progression"}:
+                continue
+            identifier = str(feature.get("id", feature.get("identifier", "")))
+            display_name = str(feature.get("display_name_en_us", feature.get("display_name", identifier.replace("_", " ").title())))
+            features.append(
+                {
+                    "type": feature_type,
+                    "id": identifier,
+                    "display_name_en_us": display_name,
+                    "intent": f"Mock decomposed planner selected {feature_type} '{identifier}'.",
+                    "depends_on": self._mock_decomposed_dependencies(feature),
+                    "fields": dict(feature),
+                }
+            )
+        return {
+            "mod_id": source.get("mod_id", "ruby_mod"),
+            "mod_name": source.get("mod_name", "Ruby Mod"),
+            "package": source.get("package", "com.generated.ruby_mod"),
+            "version": source.get("version", "0.1.0"),
+            "description": "Mock decomposed feature plan.",
+            "features": features,
+        }
+
+    def _mock_decomposed_feature_json_payload(self, user_prompt: str) -> dict:
+        target = self._json_object_after_marker(user_prompt, "Target feature plan item JSON:")
+        fields = dict(target.get("fields")) if isinstance(target.get("fields"), dict) else {}
+        feature_type = str(target.get("type", fields.get("type", "item")))
+        identifier = str(target.get("id", fields.get("id", "generated_feature")))
+        display_name = str(target.get("display_name_en_us", fields.get("display_name_en_us", identifier.replace("_", " ").title())))
+        fields["type"] = feature_type
+        fields["id"] = identifier
+        fields.setdefault("display_name_en_us", display_name)
+        return fields
+
+    def _mock_decomposed_source_payload(self, user_prompt: str) -> dict:
+        prompt = user_prompt.lower()
+        if "progression" in prompt or "gameplay loop" in prompt or "gameplay route" in prompt:
+            payload = self._load_example("progression_gameplay_loop.json")
+            if self._is_ruby_tool_set_prompt(user_prompt):
+                payload = self._with_ruby_tool_set(payload)
+            return payload
+        if "ruby tools" in prompt or "ruby tool set" in prompt:
+            return self._ruby_payload(self._ruby_tool_set())
+        if "compressor" in prompt or "machine" in prompt:
+            return self._ruby_payload(
+                [
+                    self._ruby_item_feature(),
+                    self._holdout_machine_feature("ruby", "Ruby"),
+                    self._holdout_machine_recipe("ruby_mod", "ruby"),
+                ]
+            )
+        if "ore" in prompt or "worldgen" in prompt or "overworld" in prompt:
+            return self._ruby_payload([self._ruby_item_feature(), self._holdout_ore_feature("ruby_mod", "ruby", "Ruby")])
+        if "ruby" in prompt:
+            return self._ruby_payload([self._ruby_item_feature()])
+        return {
+            "mod_id": "generated_mod",
+            "mod_name": "Generated Mod",
+            "package": "com.generated.generated_mod",
+            "version": "0.1.0",
+            "features": [],
+        }
+
+    def _mock_decomposed_dependencies(self, feature: dict[str, Any]) -> list[str]:
+        dependencies: list[str] = []
+        feature_type = str(feature.get("type", "")).lower()
+        if feature_type == "ore":
+            drop = str(feature.get("drop", ""))
+            if ":" in drop:
+                dependencies.append(drop.split(":", 1)[1])
+        if feature_type in {"tool", "sword"}:
+            material = str(feature.get("tool_material", ""))
+            if material and material not in {"wood", "stone", "iron", "diamond", "gold", "golden", "netherite", "copper"}:
+                dependencies.append(material)
+        if feature_type == "recipe":
+            for value in feature.get("ingredients", []) if isinstance(feature.get("ingredients"), list) else []:
+                text = str(value)
+                if ":" in text:
+                    dependencies.append(text.split(":", 1)[1])
+            keys = feature.get("keys") if isinstance(feature.get("keys"), dict) else {}
+            for value in keys.values():
+                text = str(value)
+                if ":" in text:
+                    dependencies.append(text.split(":", 1)[1])
+        return sorted({item for item in dependencies if item and not item.startswith("minecraft:")})
+
+    def _json_object_after_marker(self, text: str, marker: str) -> dict[str, Any]:
+        marker_index = text.find(marker)
+        start = text.find("{", marker_index if marker_index >= 0 else 0)
+        if start < 0:
+            return {}
+        depth = 0
+        in_string = False
+        escaped = False
+        for index in range(start, len(text)):
+            char = text[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        parsed = json.loads(text[start : index + 1])
+                    except json.JSONDecodeError:
+                        return {}
+                    return parsed if isinstance(parsed, dict) else {}
+        return {}
 
     def _ruby_payload(self, features: list[dict]) -> dict:
         return {

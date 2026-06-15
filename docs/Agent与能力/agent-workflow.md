@@ -6,7 +6,7 @@
 
 ```text
 Natural language
--> planner / ModSpec
+-> planner / feature plan / ModSpec
 -> deterministic generator baseline
 -> real tool-calling repair/refine loop
 -> Agentic RAG policy / multi-hop retrieve_rag / read files
@@ -34,6 +34,8 @@ Natural language
 ```powershell
 py -3.11 -m agent.cli agent develop "Create a ruby mod with a ruby item, ruby block and ruby ore." --planner llm --llm-provider mock --workspace-name rc1-develop-demo --no-build --json
 ```
+
+Decomposed Planner v1 可用 `--planner decomposed` 走同一 workflow：planner 先输出 feature plan，再按 `item/ore/machine/tool/sword/recipe/progression` 生成小 JSON，组合为 `ModSpec` 后交给 deterministic generator。modify 请求在 v1 中仍复用现有受控 LLM patch planner。
 
 ## `agent repair`
 
@@ -90,6 +92,10 @@ structured-patch-plan.json
 structured-patch-report.json
 structured-patch-rollback-report.json
 structured-patch-snapshots/
+decomposed-planner/feature-plan.json
+decomposed-planner/feature-jsons.json
+decomposed-planner/composed-modspec-raw.json
+decomposed-planner/bad-raw-outputs.json
 ```
 
 benchmark run 会在 `workspace/benchmark-runs/<run-id>/.agent/` 写出 `agent-benchmark-report.json`、`.md` 和 `.html`。

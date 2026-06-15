@@ -2,6 +2,8 @@
 
 这一层解释真实 agent 行为：planner 生成 ModSpec，tool-calling loop 读取 RAG 和文件并执行受控工具，LLM reviewer 审查风险，最终仍由 audit/build gate 验收。RC2 之后，RAG 还包含检索策略、query rewrite、多跳检索、citation trace 和 reviewer evidence sufficiency。
 
+Decomposed Planner v1 属于 planner 层增强：自然语言先拆成 feature plan，再按 feature 类型生成小 JSON 并组合回 ModSpec；它不改变 generator/audit/build 的确定性边界，也不把 RAG/Milvus 作为当前主线。
+
 > 这里放 workflow、Direct Code Lane、LLM、RAG 和工具契约。它们解释“系统怎么工作”。
 
 ## 推荐顺序

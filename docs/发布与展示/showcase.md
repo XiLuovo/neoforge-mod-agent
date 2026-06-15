@@ -16,6 +16,7 @@
 $env:PYTHONPATH = (Resolve-Path .\src)
 py -3.11 -m agent.cli showcase --run-name codex-development-e2e-smoke --llm-provider mock --no-build --json
 py -3.11 -m agent.cli eval --cases examples/agent_development_e2e.json --llm-provider mock --audit --no-build --json
+py -3.11 -m agent.cli eval --cases examples/agent_development_e2e.json --planner decomposed --llm-provider mock --audit --no-build --json
 py -3.11 -m agent.cli showcase --run-name codex-development-e2e-build --llm-provider mock --build --json
 ```
 

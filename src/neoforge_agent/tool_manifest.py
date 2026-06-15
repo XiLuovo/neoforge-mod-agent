@@ -111,7 +111,7 @@ class ToolManifestRunner:
                     required=["request"],
                     properties={
                         "request": _string("Natural language mod request."),
-                        "planner": _enum(["rules", "llm", "auto"], "Planner role implementation."),
+                        "planner": _enum(["rules", "llm", "decomposed", "auto"], "Planner role implementation."),
                         "llm_provider": _enum(["mock", "openai-compatible"], "LLM provider used when planner needs a model."),
                         "require_llm": _boolean("Fail instead of falling back to rules when real LLM planning fails."),
                         "code_lane": _enum(["hybrid", "modspec", "direct"], "Agent code lane: ModSpec-first hybrid, ModSpec only, or audited Direct Code patch."),
@@ -153,7 +153,7 @@ class ToolManifestRunner:
                     required=["request"],
                     properties={
                         "request": _string("Natural language mod development goal."),
-                        "planner": _enum(["rules", "llm", "auto"], "Planner role implementation."),
+                        "planner": _enum(["rules", "llm", "decomposed", "auto"], "Planner role implementation."),
                         "llm_provider": _enum(["mock", "openai-compatible"], "LLM provider used when planner needs a model."),
                         "workspace_name": _string("Optional workspace folder name."),
                         "run_audit": _boolean("Run workspace audit after generation."),
@@ -189,7 +189,7 @@ class ToolManifestRunner:
                     properties={
                         "workspace": _string("Workspace path or workspace name."),
                         "change_request": _string("Natural language modification request."),
-                        "planner": _enum(["rules", "llm", "auto"], "Planner role implementation."),
+                        "planner": _enum(["rules", "llm", "decomposed", "auto"], "Planner role implementation."),
                         "llm_provider": _enum(["mock", "openai-compatible"], "LLM provider used when planner needs a model."),
                         "require_llm": _boolean("Fail instead of falling back to rules when real LLM planning fails."),
                         "code_lane": _enum(["hybrid", "modspec", "direct"], "Agent code lane: ModSpec-first hybrid, ModSpec only, or audited Direct Code patch."),

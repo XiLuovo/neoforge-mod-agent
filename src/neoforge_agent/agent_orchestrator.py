@@ -11,7 +11,7 @@ from .config import AppConfig
 from .direct_code_agent import DirectCodeAgent, DirectCodeApplyResult, DirectCodeChange, DirectCodePlan
 from .domain_spec import NeoForgeModSpecPlugin
 from .llm_client import check_llm_provider_health, create_llm_client
-from .llm_planner import LLMPlanningError, PlannerArtifacts, plan_with_llm, write_planner_artifacts
+from .llm_planner import LLMPlanningError, PlannerArtifacts, plan_with_decomposed_llm, plan_with_llm, write_planner_artifacts
 from .llm_reviewer import LLM_REVIEWER_SYSTEM_PROMPT, LLMReviewResult, LLMReviewer
 from .modifier import WorkspaceModifier
 from .models import BuildResult, ModSpec, RequestOverrides
@@ -660,37 +660,39 @@ class AgentOrchestrator:
         if planner_mode == "rules":
             return self._apply_overrides(self.planner.parse_request(request, overrides=overrides), overrides), None, [], "rules"
 
-        if planner_mode == "llm":
+        if planner_mode in {"llm", "decomposed"}:
+            planner_label = "Decomposed planner" if planner_mode == "decomposed" else "LLM planner"
+            planner_fn = plan_with_decomposed_llm if planner_mode == "decomposed" else plan_with_llm
             health = check_llm_provider_health(llm_provider)
             if llm_provider == "openai-compatible" and not health.healthy:
                 if require_llm:
                     raise ValueError(
-                        "LLM planner is required but provider health check failed: "
+                        f"{planner_label} is required but provider health check failed: "
                         + "; ".join([*health.errors, *health.warnings])
                     )
                 spec = self._apply_overrides(self.planner.parse_request(request, overrides=overrides), overrides)
                 warnings = [
-                    "LLM provider health check failed; planner fell back to rules.",
+                    f"{planner_label} provider health check failed; planner fell back to rules.",
                     *health.errors,
                     *health.warnings,
                 ]
-                return spec, None, warnings, "llm->rules"
+                return spec, None, warnings, f"{planner_mode}->rules"
             try:
                 client = create_llm_client(llm_provider, self.config.project_root)
-                spec, artifacts = plan_with_llm(request, client, config=self.config)
+                spec, artifacts = planner_fn(request, client, config=self.config)
                 self._apply_overrides(spec, overrides)
-                return spec, artifacts, list(artifacts.warnings), "llm"
+                return spec, artifacts, list(artifacts.warnings), planner_mode
             except (LLMPlanningError, ValueError, RuntimeError) as exc:
                 if require_llm:
                     if isinstance(exc, LLMPlanningError):
                         raise
-                    raise ValueError(f"LLM planner is required but failed: {exc}") from exc
+                    raise ValueError(f"{planner_label} is required but failed: {exc}") from exc
                 spec = self._apply_overrides(self.planner.parse_request(request, overrides=overrides), overrides)
                 artifacts = exc.artifacts if isinstance(exc, LLMPlanningError) else None
-                warnings = [f"LLM planner failed; fallback to rules: {exc}"]
+                warnings = [f"{planner_label} failed; fallback to rules: {exc}"]
                 if artifacts is not None:
                     warnings.extend(artifacts.warnings)
-                return spec, artifacts, warnings, "llm->rules"
+                return spec, artifacts, warnings, f"{planner_mode}->rules"
 
         rules_spec = self.planner.parse_request(request, overrides=overrides)
         if rules_spec.all_content() or rules_spec.entities or rules_spec.recipes:

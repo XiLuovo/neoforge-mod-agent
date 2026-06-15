@@ -68,6 +68,27 @@ class AgentEvalTests(unittest.TestCase):
             self.assertTrue(repeat.repeat_modify_success)
             self.assertIn("ruby_ore", repeat.repeat_modify_skipped)
 
+    def test_decomposed_planner_development_e2e_suite(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = replace(test_config(Path(tmp)), project_root=PROJECT_ROOT)
+
+            result = BenchmarkEvaluator(config).run(
+                cases_path=PROJECT_ROOT / "examples" / "agent_development_e2e.json",
+                planner_mode="decomposed",
+                llm_provider="mock",
+                run_build=False,
+                run_audit=True,
+                run_name="unit-decomposed-development-e2e",
+            )
+
+            self.assertTrue(result.success)
+            self.assertEqual(result.planner_mode, "decomposed")
+            self.assertEqual(result.metrics["expected_feature_match_rate"], 1.0)
+            self.assertEqual(result.metrics["expected_category_match_rate"], 1.0)
+            generate_workspace = Path(result.cases[0].workspace or "")
+            self.assertTrue((generate_workspace / ".agent" / "decomposed-planner" / "feature-plan.json").exists())
+            self.assertTrue((generate_workspace / ".agent" / "decomposed-planner" / "feature-jsons.json").exists())
+
     def test_agent_repair_executes_safe_loop_after_audit_failure(self) -> None:
         class BreakBeforeAuditOrchestrator(AgentOrchestrator):
             def __init__(self, config: AppConfig) -> None:

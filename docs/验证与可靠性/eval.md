@@ -6,7 +6,7 @@
 
 ```text
 natural language request
--> ModSpec-first planning
+-> ModSpec-first planning / decomposed feature planning
 -> deterministic generator
 -> Java / JSON / resource artifacts
 -> audit/build gate
@@ -19,8 +19,11 @@ natural language request
 ```powershell
 $env:PYTHONPATH = (Resolve-Path .\src)
 py -3.11 -m agent.cli eval --cases examples/agent_development_e2e.json --llm-provider mock --audit --no-build --json
+py -3.11 -m agent.cli eval --cases examples/agent_development_e2e.json --planner decomposed --llm-provider mock --audit --no-build --json
 py -3.11 -m agent.cli showcase --run-name codex-development-e2e-smoke --llm-provider mock --no-build --json
 ```
+
+`--planner decomposed` 会额外落盘 `.agent/decomposed-planner/feature-plan.json`、`feature-jsons.json`、`composed-modspec-raw.json` 和 `bad-raw-outputs.json`，用于展示 natural language -> feature plan -> small JSON -> ModSpec -> audit/report 的可调试链路。
 
 更严格的本地验收：
 
