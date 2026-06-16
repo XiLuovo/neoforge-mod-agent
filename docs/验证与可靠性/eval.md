@@ -57,6 +57,47 @@ py -3.11 -m agent.cli agent develop `
 
 该命令如果失败，需要分开记录 `provider_error`、planner/schema failure、audit failure、build environment failure 或 generated-code build failure。
 
+## Mock A/B Eval Snapshot
+
+Post-merge 后补跑了一组 mock A/B，用同一份 `examples/agent_development_e2e.json` 比较 `planner=llm` 和 `planner=decomposed`：
+
+```powershell
+py -3.11 -m agent.cli eval --cases examples/agent_development_e2e.json --planner llm --llm-provider mock --audit --no-build --run-name ab-mock-llm-postmerge-20260616 --json
+py -3.11 -m agent.cli eval --cases examples/agent_development_e2e.json --planner decomposed --llm-provider mock --audit --no-build --run-name ab-mock-decomposed-postmerge-20260616 --json
+```
+
+核心结果：
+
+| Metric | `planner=llm` | `planner=decomposed` |
+|---|---:|---:|
+| success rate | `1.0` | `1.0` |
+| audit success rate | `1.0` | `1.0` |
+| expected feature match rate | `1.0` | `1.0` |
+| expected category match rate | `1.0` | `1.0` |
+| repeat modify success rate | `1.0` | `1.0` |
+| generated files total | `81` | `64` |
+| build attempted | `0` | `0` |
+| fallback/provider/schema failure scan | none | none |
+
+Prompt/call 体量使用 mock provider 的 `llm-stability.json` 估算，不代表真实 provider 计费：
+
+| Scope | `planner=llm` | `planner=decomposed` |
+|---|---:|---:|
+| develop calls | `1` | `18` |
+| develop total tokens | `84,414` | `34,559` |
+| develop max input tokens per call | `79,747` | `2,719` |
+| develop average input tokens per call | `79,747` | `1,519.1` |
+| modify calls | `1` | `1` |
+| modify total tokens | `81,264` | `80,538` |
+| total calls across 2 cases | `2` | `19` |
+| total tokens across 2 cases | `165,678` | `115,097` |
+
+结论：
+
+- Decomposed planner 在 develop/generate 场景中把一次大 `ModSpec` prompt 拆成多次小 feature prompt；调用次数增加，但单次最大输入从 `79,747` 降到 `2,719`，总 token 从 `84,414` 降到 `34,559`。
+- 当前 v1 的 modify 仍复用 controlled LLM patch planner，因此 modify 侧 token 体量基本不变；eval warning 会提示这个边界。
+- 这组 A/B 是 mock + `--no-build`，适合证明 planner 结构和 prompt 体量差异，不证明 real provider 成本，也不证明 Gradle build 或 Minecraft runtime。
+
 ## Development E2E 说明什么
 
 - 自然语言需求能进入受控 `ModSpec`，不是让 LLM 无边界手写完整 Java。
