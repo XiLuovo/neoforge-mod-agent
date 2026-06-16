@@ -14,7 +14,7 @@ from .llm_client import DEFAULT_LLM_SCHEMA_RETRIES, LLMClient, check_llm_provide
 from .models import BlockSpec, FoodSpec, ItemSpec, ModSpec, OreSpec, RecipeSpec, SwordSpec
 from .schema import get_modspec_schema
 from .tools import derive_display_name, derive_package_name, ensure_directory, slugify_mod_id, write_json, write_text
-from .validator import validate_mod_spec
+from .validator import SUPPORTED_ITEM_BEHAVIORS, validate_mod_spec
 
 
 SUPPORTED_FEATURE_TYPES = {
@@ -1328,6 +1328,8 @@ def _normalize_decomposed_feature_plan(raw: dict, prompt: str, config: AppConfig
 
     planned_features, canonical_warnings = _canonicalize_decomposed_feature_ids(planned_features, prompt)
     warnings.extend(canonical_warnings)
+    planned_features, progression_warnings = _collapse_decomposed_progression_fragments(planned_features, prompt)
+    warnings.extend(progression_warnings)
     planned_features = _ensure_decomposed_material_items(planned_features, mod_id)
     planned_features = _sort_decomposed_features(planned_features)
     planned_features = _trim_decomposed_progression_references(planned_features)
@@ -1420,6 +1422,83 @@ def _canonicalize_decomposed_feature_ids(
         if isinstance(updated, dict):
             canonicalized.append(updated)
     return canonicalized, warnings
+
+
+def _collapse_decomposed_progression_fragments(
+    features: list[dict[str, Any]],
+    prompt: str,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    progression_features = [feature for feature in features if feature.get("type") == "progression"]
+    if len(progression_features) <= 1:
+        return features, []
+
+    material = _decomposed_material_prefix(features, prompt) or "generated"
+    progression_id = f"{material}_progression"
+    stage_features: list[dict[str, Any]] = []
+    for feature in progression_features:
+        fields = feature.get("fields") if isinstance(feature.get("fields"), dict) else {}
+        raw_stage_type = str(fields.get("stage_type", fields.get("type", feature.get("stage_type", "milestone")))).lower()
+        stage_type = DECOMPOSED_STAGE_TYPE_ALIASES.get(raw_stage_type, raw_stage_type)
+        if stage_type not in SUPPORTED_PROGRESSION_STAGE_TYPES:
+            stage_type = "milestone"
+        stage_id = slugify_mod_id(str(feature.get("id", feature.get("display_name_en_us", "stage"))), fallback="stage")
+        depends_on = feature.get("depends_on") if isinstance(feature.get("depends_on"), list) else []
+        stage_features.append(
+            {
+                "id": stage_id,
+                "type": stage_type,
+                "title": str(feature.get("display_name_en_us") or derive_display_name(stage_id)),
+                "description": str(fields.get("description", feature.get("intent", ""))),
+                "requires": [str(item) for item in depends_on],
+                "provides": [str(item) for item in depends_on],
+                "unlocks": [],
+                "evidence": [str(item) for item in depends_on],
+            }
+        )
+
+    links = [
+        {
+            "from": str(stage_features[index]["id"]),
+            "to": str(stage_features[index + 1]["id"]),
+            "trigger": "progression_step",
+            "requirement": str(stage_features[index + 1]["title"]),
+        }
+        for index in range(len(stage_features) - 1)
+    ]
+    dependencies: list[str] = []
+    seen_dependencies: set[str] = set()
+    for feature in progression_features:
+        depends_on = feature.get("depends_on") if isinstance(feature.get("depends_on"), list) else []
+        for dependency in depends_on:
+            dependency_id = slugify_mod_id(str(dependency), fallback="")
+            if dependency_id and dependency_id not in seen_dependencies:
+                seen_dependencies.add(dependency_id)
+                dependencies.append(dependency_id)
+
+    collapsed = {
+        "type": "progression",
+        "id": progression_id,
+        "display_name_en_us": derive_display_name(progression_id),
+        "intent": "Collapsed decomposed progression fragments into one auditable progression loop.",
+        "depends_on": dependencies,
+        "fields": {
+            "type": "progression",
+            "id": progression_id,
+            "title": derive_display_name(progression_id),
+            "summary": "Auditable progression loop assembled from decomposed progression fragments.",
+            "entry_stage": str(stage_features[0]["id"]) if stage_features else "start",
+            "end_stage": str(stage_features[-1]["id"]) if stage_features else "start",
+            "stages": stage_features,
+            "links": links,
+        },
+    }
+
+    non_progression = [feature for feature in features if feature.get("type") != "progression"]
+    warning = (
+        f"Collapsed {len(progression_features)} decomposed progression fragments into '{progression_id}' "
+        "for stable ModSpec evidence."
+    )
+    return [*non_progression, collapsed], [warning]
 
 
 def _decomposed_material_prefix(features: list[dict[str, Any]], prompt: str) -> str:
@@ -1713,6 +1792,7 @@ def _harden_decomposed_composed_features(
     for feature in hardened:
         feature_type = str(feature.get("type", ""))
         identifier = str(feature.get("id", ""))
+        _harden_decomposed_behavior(feature, warnings)
         if feature_type == "ore":
             _harden_decomposed_ore_feature(feature, feature_plan, mod_id, known_ids, warnings)
         elif feature_type == "recipe":
@@ -1721,6 +1801,24 @@ def _harden_decomposed_composed_features(
             _harden_decomposed_progression_feature(feature, known_ids, warnings)
 
     return hardened, warnings
+
+
+def _harden_decomposed_behavior(feature: dict[str, Any], warnings: list[str]) -> None:
+    behavior = feature.get("behavior")
+    if not isinstance(behavior, dict):
+        return
+
+    identifier = str(feature.get("id", "feature"))
+    raw_behavior_type = str(behavior.get("type", "")).strip().lower()
+    if not raw_behavior_type:
+        feature.pop("behavior", None)
+        warnings.append(f"Decomposed feature '{identifier}' had empty behavior type; removed behavior.")
+        return
+    if raw_behavior_type not in SUPPORTED_ITEM_BEHAVIORS:
+        feature.pop("behavior", None)
+        warnings.append(f"Decomposed feature '{identifier}' used unsupported behavior type '{raw_behavior_type}'; removed behavior.")
+        return
+    behavior["type"] = raw_behavior_type
 
 
 def _harden_decomposed_ore_feature(

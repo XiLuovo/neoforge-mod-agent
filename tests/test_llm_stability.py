@@ -278,6 +278,66 @@ class RealProviderLikeBadDecomposedClient:
         return LLMCompletion(raw_text=json.dumps(payload, ensure_ascii=False), parsed_json=payload, provider=self.provider_name)
 
 
+class FragmentedProgressionDecomposedClient:
+    provider_name = "openai-compatible"
+
+    def complete_json(self, system_prompt: str, user_prompt: str) -> LLMCompletion:
+        if "DECOMPOSED_FEATURE_PLAN_V1" in system_prompt:
+            payload = {
+                "mod_id": "ruby_mod",
+                "mod_name": "Ruby Mod",
+                "package": "com.generated.ruby_mod",
+                "features": [
+                    {"type": "item", "id": "ruby", "display_name_en_us": "Ruby"},
+                    {"type": "ore", "id": "ruby_ore", "display_name_en_us": "Ruby Ore", "fields": {"drop": "ruby_mod:ruby"}},
+                    {"type": "machine", "id": "compressor", "display_name_en_us": "Compressor"},
+                    {"type": "tool", "id": "ruby_pickaxe", "display_name_en_us": "Ruby Pickaxe", "fields": {"tool_type": "pickaxe", "tool_material": "ruby"}},
+                    {
+                        "type": "sword",
+                        "id": "ruby_sword",
+                        "display_name_en_us": "Ruby Sword",
+                        "fields": {"tool_material": "ruby", "behavior": {"type": ""}},
+                    },
+                    {
+                        "type": "progression",
+                        "id": "obtain_ruby",
+                        "display_name_en_us": "Obtain Ruby",
+                        "depends_on": ["ruby"],
+                        "fields": {"stage_type": "material"},
+                    },
+                    {
+                        "type": "progression",
+                        "id": "craft_compressor",
+                        "display_name_en_us": "Craft Compressor",
+                        "depends_on": ["compressor"],
+                        "fields": {"stage_type": "machine"},
+                    },
+                    {
+                        "type": "progression",
+                        "id": "craft_ruby_tools",
+                        "display_name_en_us": "Craft Ruby Tools",
+                        "depends_on": ["ruby_pickaxe", "ruby_sword"],
+                        "fields": {"stage_type": "equipment"},
+                    },
+                ],
+            }
+            return LLMCompletion(raw_text=json.dumps(payload), parsed_json=payload, provider=self.provider_name)
+
+        target = json.loads(user_prompt.split("Target feature plan item JSON:\n", 1)[1].split("\n\nReturn only", 1)[0])
+        feature = dict(target.get("fields", {}))
+        feature.setdefault("type", target["type"])
+        feature.setdefault("id", target["id"])
+        feature.setdefault("display_name_en_us", target.get("display_name_en_us", "Feature"))
+        if feature["type"] == "ore":
+            feature.setdefault(
+                "worldgen",
+                {"enabled": True, "dimension": "minecraft:overworld", "min_y": -64, "max_y": 32, "vein_size": 6, "veins_per_chunk": 4},
+            )
+        if feature["type"] == "machine":
+            feature.setdefault("machine_kind", "compressor")
+        return LLMCompletion(raw_text=json.dumps(feature), parsed_json=feature, provider=self.provider_name)
+
+
 class FakeProviderResponse:
     def __init__(self, payload: dict) -> None:
         self.payload = payload
@@ -377,6 +437,24 @@ class LLMStabilityTests(unittest.TestCase):
             {"milestone"},
         )
         self.assertTrue(any("normalized" in warning for warning in artifacts.warnings))
+        self.assertTrue(artifacts.schema_validation_attempts[-1]["success"])
+
+    def test_decomposed_planner_collapses_progression_fragments(self) -> None:
+        client = FragmentedProgressionDecomposedClient()
+
+        spec, artifacts = plan_with_decomposed_llm(
+            "Create a ruby progression gameplay loop with ruby ore worldgen in the overworld, "
+            "a compressor machine, ruby tools, recipes, and an auditable progression report.",
+            client,
+        )
+
+        self.assertEqual(spec.machines[0].identifier, "ruby_compressor")
+        self.assertEqual(len(spec.progressions), 1)
+        self.assertEqual(spec.progressions[0].identifier, "ruby_progression")
+        self.assertGreaterEqual(len(spec.progressions[0].stages), 3)
+        self.assertIsNone(spec.swords[0].behavior)
+        self.assertTrue(any("Collapsed" in warning for warning in artifacts.warnings))
+        self.assertTrue(any("empty behavior type" in warning for warning in artifacts.warnings))
         self.assertTrue(artifacts.schema_validation_attempts[-1]["success"])
 
     def test_decomposed_feature_prompt_uses_slim_context(self) -> None:
