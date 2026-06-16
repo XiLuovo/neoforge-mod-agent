@@ -149,6 +149,135 @@ class BadDecomposedFeatureClient:
         return LLMCompletion(raw_text=json.dumps(payload), parsed_json=payload, provider=self.provider_name)
 
 
+class RealProviderLikeBadDecomposedClient:
+    provider_name = "openai-compatible"
+
+    def complete_json(self, system_prompt: str, user_prompt: str) -> LLMCompletion:
+        if "DECOMPOSED_FEATURE_PLAN_V1" in system_prompt:
+            payload = {
+                "mod_id": "ruby_mod",
+                "mod_name": "Ruby Mod",
+                "package": "com.generated.ruby_mod",
+                "version": "0.1.0",
+                "features": [
+                    {
+                        "type": "item",
+                        "id": "ruby",
+                        "display_name_en_us": "Ruby",
+                        "depends_on": [],
+                        "fields": {"type": "item", "id": "ruby", "display_name_en_us": "Ruby"},
+                    },
+                    {
+                        "type": "ore",
+                        "id": "ruby_ore",
+                        "display_name_en_us": "Ruby Ore",
+                        "depends_on": [],
+                        "fields": {"type": "ore", "id": "ruby_ore", "display_name_en_us": "Ruby Ore"},
+                    },
+                    {
+                        "type": "machine",
+                        "id": "compressor",
+                        "display_name_en_us": "Compressor",
+                        "depends_on": ["ruby"],
+                        "fields": {"type": "machine", "id": "compressor", "display_name_en_us": "Compressor"},
+                    },
+                    {
+                        "type": "recipe",
+                        "id": "compressor_craft",
+                        "display_name_en_us": "Compressor Crafting",
+                        "depends_on": ["ruby"],
+                        "fields": {"type": "recipe", "id": "compressor_craft", "display_name_en_us": "Compressor Crafting"},
+                    },
+                    {
+                        "type": "recipe",
+                        "id": "ruby_compressing",
+                        "display_name_en_us": "Ruby Compressing",
+                        "depends_on": ["compressor", "ruby_ore"],
+                        "fields": {"type": "recipe", "id": "ruby_compressing", "display_name_en_us": "Ruby Compressing"},
+                    },
+                    {
+                        "type": "progression",
+                        "id": "ruby_progression",
+                        "display_name_en_us": "Ruby Progression",
+                        "depends_on": ["ruby_ore", "ruby", "compressor"],
+                        "fields": {"type": "progression", "id": "ruby_progression", "display_name_en_us": "Ruby Progression"},
+                    },
+                ],
+            }
+            return LLMCompletion(raw_text=json.dumps(payload), parsed_json=payload, provider=self.provider_name)
+
+        target = json.loads(user_prompt.split("Target feature plan item JSON:\n", 1)[1].split("\n\nReturn only", 1)[0])
+        feature_type = target["type"]
+        feature_id = target["id"]
+        payload: dict
+        if feature_type == "ore":
+            payload = {
+                "type": "ore",
+                "id": feature_id,
+                "display_name_en_us": "Ruby Ore",
+                "drop": None,
+                "worldgen": {
+                    "enabled": True,
+                    "dimension": "overworld",
+                    "min_y": -64,
+                    "max_y": 32,
+                    "vein_size": 6,
+                    "veins_per_chunk": 4,
+                },
+            }
+        elif feature_id == "compressor_craft":
+            payload = {
+                "type": "recipe",
+                "id": feature_id,
+                "display_name_en_us": "Compressor Crafting",
+                "recipe_type": "crafting_shaped",
+            }
+        elif feature_id == "ruby_compressing":
+            payload = {
+                "type": "recipe",
+                "id": feature_id,
+                "display_name_en_us": "Ruby Compressing",
+                "recipe_type": "compressor",
+            }
+        elif feature_type == "progression":
+            payload = {
+                "type": "progression",
+                "id": feature_id,
+                "title": "Ruby Progression",
+                "entry_stage": "start",
+                "end_stage": "mastery",
+                "stages": [
+                    {
+                        "id": "start",
+                        "type": "start",
+                        "title": "Start",
+                        "provides": ["ruby_ore_discovery"],
+                        "evidence": "采集红宝石矿石",
+                    },
+                    {
+                        "id": "mastery",
+                        "type": "end",
+                        "title": "Mastery",
+                        "evidence": "制作全套红宝石工具",
+                    },
+                ],
+            }
+        elif feature_type == "machine":
+            payload = {
+                "type": "machine",
+                "id": feature_id,
+                "display_name_en_us": "Compressor",
+                "machine_kind": "compressor",
+            }
+        else:
+            payload = {
+                "type": feature_type,
+                "id": feature_id,
+                "display_name_en_us": target.get("display_name_en_us", "Feature"),
+            }
+        return LLMCompletion(raw_text=json.dumps(payload, ensure_ascii=False), parsed_json=payload, provider=self.provider_name)
+
+
 class FakeProviderResponse:
     def __init__(self, payload: dict) -> None:
         self.payload = payload
@@ -226,6 +355,29 @@ class LLMStabilityTests(unittest.TestCase):
             self.assertTrue((decomposed_dir / "feature-plan.json").exists())
             self.assertTrue((decomposed_dir / "feature-jsons.json").exists())
             self.assertTrue((decomposed_dir / "bad-raw-outputs.json").exists())
+
+    def test_decomposed_planner_hardens_real_provider_schema_drift(self) -> None:
+        client = RealProviderLikeBadDecomposedClient()
+
+        spec, artifacts = plan_with_decomposed_llm(
+            "Create a ruby progression gameplay loop with ruby ore worldgen in the overworld, "
+            "a compressor machine, ruby tools, recipes, and an auditable progression report.",
+            client,
+        )
+
+        self.assertEqual(spec.mod_id, "ruby_mod")
+        self.assertEqual(spec.machines[0].identifier, "ruby_compressor")
+        self.assertEqual(spec.ores[0].drop, "ruby_mod:ruby")
+        self.assertEqual(spec.ores[0].worldgen.dimension, "minecraft:overworld")
+        self.assertEqual({recipe.recipe_type for recipe in spec.recipes}, {"shapeless"})
+        self.assertIn("ruby_mod:ruby_compressor", {recipe.result for recipe in spec.recipes})
+        self.assertTrue(spec.progressions)
+        self.assertEqual(
+            {stage.stage_type for stage in spec.progressions[0].stages},
+            {"milestone"},
+        )
+        self.assertTrue(any("normalized" in warning for warning in artifacts.warnings))
+        self.assertTrue(artifacts.schema_validation_attempts[-1]["success"])
 
     def test_decomposed_feature_prompt_uses_slim_context(self) -> None:
         sibling_sentinel = "SIBLING_FULL_FIELDS_SHOULD_NOT_LEAK"
