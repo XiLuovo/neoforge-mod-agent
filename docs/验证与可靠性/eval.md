@@ -31,6 +31,32 @@ py -3.11 -m agent.cli showcase --run-name codex-development-e2e-smoke --llm-prov
 py -3.11 -m agent.cli showcase --run-name codex-development-e2e-build --llm-provider mock --build --json
 ```
 
+## 当前已验证证据
+
+当前 post-merge 证据分成两层，展示时不要混在一起说：
+
+| 证据 | 命令/Run | 已证明 | 未证明 |
+|---|---|---|---|
+| real provider decomposed eval | `postmerge-real-decomposed-fragment-fix2` | real provider planning 成功，2/2 cases success，audit 2/2，expected feature/category match rate = `1.0`，trace artifacts 完整 | 未跑 Gradle build，因为使用 `--no-build` |
+| build smoke | `main-postmerge-build-smoke` | mock provider + decomposed planner 生成工程后，audit `280` checks passed，Gradle build `exit_code=0`，jar 已生成 | 未证明 real provider 同一 run 的 build，也未证明 Minecraft runtime |
+| unit tests | `py -3.11 -m unittest discover -s tests -v` | planner hardening、decomposed regression 和既有能力回归通过，`213 tests OK` | 不替代真实 provider 或 Gradle build |
+
+如果要进一步升级证据，可以追加一个单 case strict real provider build：
+
+```powershell
+py -3.11 -m agent.cli agent develop `
+  "Create a ruby progression gameplay loop with ruby ore worldgen in the overworld, a compressor machine, ruby tools, recipes, and an auditable progression report." `
+  --planner decomposed `
+  --llm-provider openai-compatible `
+  --require-llm `
+  --workspace-name real-decomposed-build-smoke `
+  --overwrite `
+  --build `
+  --json
+```
+
+该命令如果失败，需要分开记录 `provider_error`、planner/schema failure、audit failure、build environment failure 或 generated-code build failure。
+
 ## Development E2E 说明什么
 
 - 自然语言需求能进入受控 `ModSpec`，不是让 LLM 无边界手写完整 Java。

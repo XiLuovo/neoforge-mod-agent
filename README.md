@@ -40,6 +40,8 @@ py -3.11 -m unittest discover -s tests -v
 
 `--planner decomposed` 是 Decomposed Planner v1：先把自然语言拆成 `feature-plan.json`，再按 `item/ore/machine/tool/sword/recipe/progression` 生成小 JSON，组合回 `ModSpec` 后继续走 generator、audit/build 和 report。运行后可在 workspace 的 `.agent/decomposed-planner/` 查看 `feature-plan.json`、`feature-jsons.json`、`composed-modspec-raw.json` 和坏输出记录；它不是 RAG/Milvus 扩展，也不是让 LLM 接管完整 Java generator。
 
+Post-merge evidence snapshot：Decomposed Planner v1 已补 real-provider hardening，能把 real provider 拆碎的 progression fragments 稳定合并回 `ruby_progression`，并清理空/非法 behavior schema drift。当前可引用证据包括 real provider decomposed eval `postmerge-real-decomposed-fragment-fix2`（2/2 cases success，audit 2/2，expected feature/category match rate 均为 `1.0`，但使用 `--no-build`）、mock decomposed build smoke `main-postmerge-build-smoke`（audit 280 checks passed，Gradle build `exit_code=0`，生成 jar）和 full unittest `213 tests OK`。这些证据证明 workspace 级 planning/audit/build gate，不等于 Minecraft runtime 自动验收。
+
 ## Public Release Package
 
 发布脚本默认不把整个 `workspace/` 打进公开包，只从固定 showcase、develop/repair/bench 名称收集可展示 evidence。打包前先生成 development e2e、develop/repair 和 bench 示例产物；RAG ablation evidence 可作为额外展示材料单独保留：
