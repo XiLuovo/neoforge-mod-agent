@@ -107,6 +107,44 @@ SUPPORTED_STRUCTURE_KINDS = {"jigsaw"}
 SUPPORTED_STRUCTURE_STEPS = {"surface_structures", "underground_structures"}
 SUPPORTED_TERRAIN_ADAPTATION = {"none", "beard_thin", "beard_box", "bury", "encapsulate"}
 SUPPORTED_LOOT_TABLE_KINDS = {"chest"}
+SUPPORTED_RECIPE_TYPES = {"shaped", "shapeless"}
+SUPPORTED_PROGRESSION_STAGE_TYPES = {
+    "ore",
+    "material",
+    "recipe",
+    "machine",
+    "equipment",
+    "item",
+    "block",
+    "entity",
+    "structure",
+    "loot_pool",
+    "dimension",
+    "biome",
+    "world_feature",
+    "milestone",
+}
+DECOMPOSED_RECIPE_TYPE_ALIASES = {
+    "crafting_shaped": "shaped",
+    "minecraft:crafting_shaped": "shaped",
+    "crafting_shapeless": "shapeless",
+    "minecraft:crafting_shapeless": "shapeless",
+    "craft": "shaped",
+    "crafting": "shaped",
+    "compressor": "shapeless",
+    "machine": "shapeless",
+    "smelting": "shapeless",
+}
+DECOMPOSED_STAGE_TYPE_ALIASES = {
+    "start": "milestone",
+    "end": "milestone",
+    "finish": "milestone",
+    "complete": "milestone",
+    "completion": "milestone",
+    "tool": "equipment",
+    "tools": "equipment",
+    "sword": "equipment",
+}
 
 
 @dataclass(slots=True)
@@ -313,6 +351,16 @@ def plan_with_decomposed_llm(
         feature_record["feature"] = feature
         artifacts.decomposed_feature_json_outputs.append(feature_record)
         composed_features.append(feature)
+
+    composed_features, hardening_warnings = _harden_decomposed_composed_features(composed_features, feature_plan)
+    artifacts.warnings.extend(hardening_warnings)
+    for record, feature in zip(artifacts.decomposed_feature_json_outputs, composed_features):
+        record["feature"] = feature
+        record["warnings"].extend(
+            warning
+            for warning in hardening_warnings
+            if f"'{feature.get('id')}'" in warning or f"`{feature.get('id')}`" in warning
+        )
 
     composed_raw = {
         "mod_id": feature_plan["mod_id"],
@@ -881,6 +929,10 @@ def _build_decomposed_feature_plan_system_prompt(language: str, *, rag_context: 
         "First split the natural language request into a small feature plan.",
         "V1 supports only these feature types: item, ore, machine, tool, sword, recipe, progression.",
         "Use ore.worldgen for ore world generation; do not create a separate worldgen feature type.",
+        "Recipe features are crafting recipes only; recipe_type must be shaped or shapeless.",
+        "Do not emit compressor, furnace, smelting, or other machine-processing recipe types in decomposed v1.",
+        "Progression stage type must be one of: ore, material, recipe, machine, equipment, item, block, entity, structure, loot_pool, dimension, biome, world_feature, milestone.",
+        "Use milestone for start/end/checkpoint stages; do not use stage types named start or end.",
         "Keep each plan entry small and debuggable; detailed fields can go under fields.",
         "Every id must be snake_case and every dependency must reference another planned or existing id.",
         f"Preferred natural language output locale: {language}.",
@@ -920,8 +972,9 @@ def _build_decomposed_feature_system_prompt(feature_type: str, language: str) ->
             "Use only fields supported by the ModSpec schema for that feature type.",
             "For ore, put world generation under worldgen with enabled=true when natural generation is requested.",
             "For machines, use one machine feature and machine_kind rather than GUI or BlockEntity code.",
-            "For recipes, reference existing/generated ids with the mod namespace.",
-            "For progression, reference generated feature ids through stages and links.",
+            "For recipes, recipe_type must be shaped or shapeless; reference existing/generated ids with the mod namespace.",
+            "For progression, stage type must be ore, material, recipe, machine, equipment, item, block, entity, structure, loot_pool, dimension, biome, world_feature, or milestone.",
+            "For progression, use milestone for start/end/checkpoint stages and reference generated feature ids through stages and links.",
             f"Preferred natural language output locale: {language}.",
         ]
     )
@@ -1070,11 +1123,33 @@ def _decomposed_field_contract(feature_type: str) -> dict[str, Any]:
         "recipe": {
             **base,
             "optional": ["recipe_type", "ingredients", "pattern", "keys", "result", "count", "category", "group"],
+            "recipe_type_enum": ["shaped", "shapeless"],
+            "notes": [
+                "Crafting only. Do not use crafting_shaped, crafting_shapeless, compressor, furnace, smelting, or machine recipe types.",
+                "For shaped recipes provide pattern and keys. For shapeless recipes provide ingredients.",
+            ],
         },
         "progression": {
             **base,
             "optional": ["title", "summary", "entry_stage", "end_stage", "stages", "links"],
             "stage_fields": ["id", "type", "title", "requires", "provides", "unlocks", "evidence"],
+            "stage_type_enum": [
+                "ore",
+                "material",
+                "recipe",
+                "machine",
+                "equipment",
+                "item",
+                "block",
+                "entity",
+                "structure",
+                "loot_pool",
+                "dimension",
+                "biome",
+                "world_feature",
+                "milestone",
+            ],
+            "stage_notes": ["Use milestone for start/end/checkpoint stages; do not use stage types named start or end."],
             "link_fields": ["from", "to", "trigger", "requirement"],
         },
     }
@@ -1251,6 +1326,8 @@ def _normalize_decomposed_feature_plan(raw: dict, prompt: str, config: AppConfig
         seen.add(key)
         planned_features.append(planned)
 
+    planned_features, canonical_warnings = _canonicalize_decomposed_feature_ids(planned_features, prompt)
+    warnings.extend(canonical_warnings)
     planned_features = _ensure_decomposed_material_items(planned_features, mod_id)
     planned_features = _sort_decomposed_features(planned_features)
     planned_features = _trim_decomposed_progression_references(planned_features)
@@ -1307,6 +1384,81 @@ def _trim_decomposed_progression_references(features: list[dict[str, Any]]) -> l
             ]
         feature["fields"] = fields
     return features
+
+
+def _canonicalize_decomposed_feature_ids(
+    features: list[dict[str, Any]],
+    prompt: str,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    warnings: list[str] = []
+    material = _decomposed_material_prefix(features, prompt)
+    if not material:
+        return features, warnings
+
+    id_map: dict[str, str] = {}
+    for feature in features:
+        feature_type = str(feature.get("type", ""))
+        identifier = str(feature.get("id", ""))
+        if not identifier:
+            continue
+        canonical = identifier
+        if feature_type == "machine" and identifier in SUPPORTED_MACHINE_KINDS and not identifier.startswith(f"{material}_"):
+            canonical = f"{material}_{identifier}"
+        elif feature_type == "progression":
+            if identifier in {"progression", "progression_loop", "gameplay_loop", f"{material}_progression_loop"}:
+                canonical = f"{material}_progression"
+        if canonical != identifier:
+            id_map[identifier] = canonical
+            warnings.append(f"Decomposed feature id '{identifier}' normalized to '{canonical}' for stable benchmark evidence.")
+
+    if not id_map:
+        return features, warnings
+
+    canonicalized: list[dict[str, Any]] = []
+    for feature in features:
+        updated = _rewrite_decomposed_references(feature, id_map)
+        if isinstance(updated, dict):
+            canonicalized.append(updated)
+    return canonicalized, warnings
+
+
+def _decomposed_material_prefix(features: list[dict[str, Any]], prompt: str) -> str:
+    prompt_slug = slugify_mod_id(prompt, fallback="")
+    for feature in features:
+        feature_id = str(feature.get("id", ""))
+        if feature.get("type") == "item" and feature_id:
+            if feature_id in {"ruby", "sapphire", "copper", "amber"}:
+                return feature_id
+            if feature_id.endswith("_gem"):
+                return feature_id.removesuffix("_gem")
+    for feature in features:
+        feature_id = str(feature.get("id", ""))
+        for suffix in ("_ore", "_pickaxe", "_axe", "_shovel", "_hoe", "_sword"):
+            if feature_id.endswith(suffix):
+                return feature_id.removesuffix(suffix)
+    if "ruby" in prompt_slug:
+        return "ruby"
+    return ""
+
+
+def _rewrite_decomposed_references(value: Any, id_map: dict[str, str]) -> Any:
+    if isinstance(value, dict):
+        return {key: _rewrite_decomposed_references(item, id_map) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_rewrite_decomposed_references(item, id_map) for item in value]
+    if isinstance(value, str):
+        return _rewrite_decomposed_reference_string(value, id_map)
+    return value
+
+
+def _rewrite_decomposed_reference_string(value: str, id_map: dict[str, str]) -> str:
+    if value in id_map:
+        return id_map[value]
+    if ":" in value:
+        namespace, local_id = value.split(":", 1)
+        if local_id in id_map:
+            return f"{namespace}:{id_map[local_id]}"
+    return value
 
 
 def _decomposed_ref_known(reference: str, known_ids: set[str]) -> bool:
@@ -1542,6 +1694,249 @@ def _fallback_decomposed_feature(planned: dict[str, Any], feature_plan: dict[str
         )
         feature.setdefault("links", [])
     return feature
+
+
+def _harden_decomposed_composed_features(
+    features: list[dict[str, Any]],
+    feature_plan: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    warnings: list[str] = []
+    mod_id = str(feature_plan.get("mod_id", ""))
+    known_ids = {str(feature.get("id")) for feature in features if feature.get("id")}
+    result_ids = {
+        str(feature.get("id"))
+        for feature in features
+        if feature.get("id") and str(feature.get("type")) not in {"recipe", "progression"}
+    }
+    hardened = [dict(feature) for feature in features]
+
+    for feature in hardened:
+        feature_type = str(feature.get("type", ""))
+        identifier = str(feature.get("id", ""))
+        if feature_type == "ore":
+            _harden_decomposed_ore_feature(feature, feature_plan, mod_id, known_ids, warnings)
+        elif feature_type == "recipe":
+            _harden_decomposed_recipe_feature(feature, feature_plan, mod_id, known_ids, result_ids, warnings)
+        elif feature_type == "progression":
+            _harden_decomposed_progression_feature(feature, known_ids, warnings)
+
+    return hardened, warnings
+
+
+def _harden_decomposed_ore_feature(
+    feature: dict[str, Any],
+    feature_plan: dict[str, Any],
+    mod_id: str,
+    known_ids: set[str],
+    warnings: list[str],
+) -> None:
+    identifier = str(feature.get("id", "ore"))
+    drop = feature.get("drop")
+    local_drop = _local_reference_id(str(drop)) if not _blank_decomposed_value(drop) else ""
+    if local_drop and local_drop in known_ids:
+        feature["drop"] = _decomposed_resource_id(mod_id, local_drop)
+    else:
+        material_id = _decomposed_material_id_for_ore(identifier, feature_plan, known_ids)
+        feature["drop"] = _decomposed_resource_id(mod_id, material_id)
+        warnings.append(f"Decomposed ore '{identifier}' used unsupported or missing drop; normalized to '{feature['drop']}'.")
+
+    worldgen = feature.get("worldgen")
+    if isinstance(worldgen, dict):
+        raw_dimension = str(worldgen.get("dimension", "")).strip().lower()
+        if raw_dimension == "overworld":
+            worldgen["dimension"] = "minecraft:overworld"
+            warnings.append(f"Decomposed ore '{identifier}' worldgen dimension 'overworld' normalized to 'minecraft:overworld'.")
+
+
+def _harden_decomposed_recipe_feature(
+    feature: dict[str, Any],
+    feature_plan: dict[str, Any],
+    mod_id: str,
+    known_ids: set[str],
+    result_ids: set[str],
+    warnings: list[str],
+) -> None:
+    identifier = str(feature.get("id", "generated_recipe"))
+    raw_recipe_type = str(feature.get("recipe_type", "shaped")).strip().lower()
+    recipe_type = DECOMPOSED_RECIPE_TYPE_ALIASES.get(raw_recipe_type, raw_recipe_type)
+    if recipe_type not in SUPPORTED_RECIPE_TYPES:
+        warnings.append(f"Decomposed recipe '{identifier}' used unsupported recipe_type '{raw_recipe_type}'; normalized to 'shapeless'.")
+        recipe_type = "shapeless"
+
+    if recipe_type == "shaped":
+        pattern = feature.get("pattern")
+        keys = feature.get("keys")
+        if not isinstance(pattern, list) or not pattern or not isinstance(keys, dict) or not keys:
+            warnings.append(f"Decomposed recipe '{identifier}' lacked shaped pattern/keys; normalized to 'shapeless'.")
+            recipe_type = "shapeless"
+
+    if raw_recipe_type != recipe_type and raw_recipe_type in DECOMPOSED_RECIPE_TYPE_ALIASES:
+        warnings.append(f"Decomposed recipe '{identifier}' recipe_type '{raw_recipe_type}' normalized to '{recipe_type}'.")
+    feature["recipe_type"] = recipe_type
+
+    result = feature.get("result")
+    result_id = _local_reference_id(str(result)) if not _blank_decomposed_value(result) else ""
+    if not result_id or result_id not in result_ids:
+        inferred_result = _infer_decomposed_recipe_result_id(identifier, feature, feature_plan, result_ids)
+        feature["result"] = _decomposed_resource_id(mod_id, inferred_result)
+        warnings.append(f"Decomposed recipe '{identifier}' used missing or unknown result; normalized to '{feature['result']}'.")
+
+    if recipe_type == "shapeless":
+        ingredients = feature.get("ingredients")
+        if not isinstance(ingredients, list) or not ingredients:
+            ingredients = _infer_decomposed_recipe_ingredients(feature, feature_plan, mod_id, known_ids)
+            feature["ingredients"] = ingredients
+            warnings.append(f"Decomposed recipe '{identifier}' lacked shapeless ingredients; inferred deterministic ingredients.")
+        feature.pop("pattern", None)
+        feature.pop("keys", None)
+
+
+def _harden_decomposed_progression_feature(
+    feature: dict[str, Any],
+    known_ids: set[str],
+    warnings: list[str],
+) -> None:
+    identifier = str(feature.get("id", "progression"))
+    raw_stages = feature.get("stages") if isinstance(feature.get("stages"), list) else []
+    stages: list[dict[str, Any]] = []
+    stage_ids: set[str] = set()
+    for raw_stage in raw_stages:
+        if not isinstance(raw_stage, dict):
+            continue
+        stage = dict(raw_stage)
+        stage_id = slugify_mod_id(str(stage.get("id", stage.get("identifier", stage.get("title", "stage")))), fallback="stage")
+        raw_stage_type = str(stage.get("stage_type", stage.get("type", "milestone"))).strip().lower()
+        stage_type = DECOMPOSED_STAGE_TYPE_ALIASES.get(raw_stage_type, raw_stage_type)
+        if stage_type not in SUPPORTED_PROGRESSION_STAGE_TYPES:
+            warnings.append(f"Decomposed progression '{identifier}' stage '{stage_id}' used unsupported type '{raw_stage_type}'; normalized to 'milestone'.")
+            stage_type = "milestone"
+        elif stage_type != raw_stage_type:
+            warnings.append(f"Decomposed progression '{identifier}' stage '{stage_id}' type '{raw_stage_type}' normalized to '{stage_type}'.")
+
+        stage["id"] = stage_id
+        stage["type"] = stage_type
+        stage["title"] = str(stage.get("title") or derive_display_name(stage_id))
+        for key in ("requires", "provides", "unlocks", "evidence"):
+            values = _decomposed_reference_list(stage.get(key))
+            stage[key] = [value for value in values if _decomposed_ref_known(value, known_ids)]
+        stage_ids.add(stage_id)
+        stages.append(stage)
+
+    if not stages:
+        fallback_stage = {
+            "id": "start",
+            "type": "milestone",
+            "title": "Start",
+            "evidence": [],
+        }
+        stages = [fallback_stage]
+        stage_ids = {"start"}
+        warnings.append(f"Decomposed progression '{identifier}' had no usable stages; inserted a milestone stage.")
+
+    feature["stages"] = stages
+    entry_stage = str(feature.get("entry_stage", ""))
+    end_stage = str(feature.get("end_stage", ""))
+    feature["entry_stage"] = entry_stage if entry_stage in stage_ids else str(stages[0]["id"])
+    feature["end_stage"] = end_stage if end_stage in stage_ids else str(stages[-1]["id"])
+
+    links: list[dict[str, Any]] = []
+    raw_links = feature.get("links") if isinstance(feature.get("links"), list) else []
+    for raw_link in raw_links:
+        if not isinstance(raw_link, dict):
+            continue
+        from_stage = str(raw_link.get("from", raw_link.get("from_stage", "")))
+        to_stage = str(raw_link.get("to", raw_link.get("to_stage", "")))
+        if from_stage in stage_ids and to_stage in stage_ids:
+            links.append(
+                {
+                    "from": from_stage,
+                    "to": to_stage,
+                    "trigger": str(raw_link.get("trigger", "")),
+                    "requirement": str(raw_link.get("requirement", "")),
+                }
+            )
+    feature["links"] = links
+
+
+def _blank_decomposed_value(value: object) -> bool:
+    if value is None:
+        return True
+    text = str(value).strip().lower()
+    return text in {"", "none", "null", "nil", "n/a", "undefined"}
+
+
+def _local_reference_id(reference: str) -> str:
+    value = reference.split(":", 1)[1] if ":" in reference else reference
+    return slugify_mod_id(value, fallback="")
+
+
+def _decomposed_material_id_for_ore(identifier: str, feature_plan: dict[str, Any], known_ids: set[str]) -> str:
+    preferred = identifier.removesuffix("_ore") or identifier
+    if preferred in known_ids:
+        return preferred
+    for feature in feature_plan.get("features", []):
+        if not isinstance(feature, dict) or feature.get("type") != "item":
+            continue
+        item_id = str(feature.get("id", ""))
+        if item_id in known_ids and (item_id == preferred or preferred in item_id or item_id in preferred):
+            return item_id
+    return _first_decomposed_item_id(feature_plan) or preferred
+
+
+def _infer_decomposed_recipe_result_id(
+    identifier: str,
+    feature: dict[str, Any],
+    feature_plan: dict[str, Any],
+    result_ids: set[str],
+) -> str:
+    for suffix in ("_crafting", "_craft", "_recipe"):
+        candidate = identifier.removesuffix(suffix)
+        if candidate != identifier and candidate in result_ids:
+            return candidate
+        if candidate != identifier:
+            suffixed_candidate = next((item for item in sorted(result_ids) if item.endswith(f"_{candidate}")), "")
+            if suffixed_candidate:
+                return suffixed_candidate
+    if identifier in result_ids:
+        return identifier
+    item_id = _first_decomposed_item_id(feature_plan)
+    if item_id:
+        return item_id
+    depends_on = feature.get("depends_on", [])
+    if not isinstance(depends_on, list):
+        depends_on = []
+    for dependency in depends_on:
+        dependency_id = slugify_mod_id(str(dependency), fallback="")
+        if dependency_id in result_ids:
+            return dependency_id
+    return next(iter(sorted(result_ids)), identifier)
+
+
+def _infer_decomposed_recipe_ingredients(
+    feature: dict[str, Any],
+    feature_plan: dict[str, Any],
+    mod_id: str,
+    known_ids: set[str],
+) -> list[str]:
+    ingredients: list[str] = []
+    depends_on = feature.get("depends_on", [])
+    if isinstance(depends_on, list):
+        for dependency in depends_on:
+            dependency_id = slugify_mod_id(str(dependency), fallback="")
+            if dependency_id in known_ids:
+                ingredients.append(_decomposed_resource_id(mod_id, dependency_id))
+    if ingredients:
+        return ingredients
+    item_id = _first_decomposed_item_id(feature_plan)
+    return [_decomposed_resource_id(mod_id, item_id)] if item_id else []
+
+
+def _decomposed_reference_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if not _blank_decomposed_value(item)]
+    if _blank_decomposed_value(value):
+        return []
+    return [str(value)]
 
 
 def _first_decomposed_item_id(feature_plan: dict[str, Any]) -> str | None:
