@@ -29,17 +29,22 @@ py -3.11 -m agent.cli showcase --run-name codex-development-e2e-build --llm-prov
 - unit tests：`py -3.11 -m unittest discover -s tests -v` 通过，`213 tests OK`。
 - real provider decomposed eval：`postmerge-real-decomposed-fragment-fix2`，2/2 cases success，audit 2/2 success，expected feature/category match rate 均为 `1.0`。
 - real provider eval 边界：该 run 使用 `--no-build`，证明的是 real provider planning + audit + trace，不是 Gradle build。
+- strict real provider build smoke：`real-decomposed-build-smoke` 使用 `openai-compatible` provider + decomposed planner + `--require-llm` + `--build`，planner 生成 15 个 features，audit `246` checks passed，Gradle `exit_code=0`，生成 `ruby_progression-0.1.0.jar`。
+- real provider build 边界：该 run 证明真实 provider 能通过 workspace 级 planning、audit 和 Gradle build；仍然不是 Minecraft 客户端/服务端进游戏自动验收。
 - build smoke：`main-postmerge-build-smoke` 使用 mock provider + decomposed planner + `--build`，audit `280` checks passed，Gradle `exit_code=0`，生成 `progression_mod-0.1.0.jar`。
 - runtime 边界：这些证据仍然不是 Minecraft 客户端/服务端进游戏自动验收。
 
 推荐展示时先打开：
 
 - `workspace/eval-runs/postmerge-real-decomposed-fragment-fix2/.agent/eval-report.md`
+- `workspace/real-decomposed-build-smoke/.agent/agent-run.md`
+- `workspace/real-decomposed-build-smoke/.agent/logs/gradle-build.json`
+- `workspace/real-decomposed-build-smoke/.agent/audit-report.md`
 - `workspace/main-postmerge-build-smoke/.agent/agent-run.md`
 - `workspace/main-postmerge-build-smoke/.agent/logs/gradle-build.json`
 - `workspace/main-postmerge-build-smoke/.agent/audit-report.md`
 
-讲法要保持证据匹配：real provider eval 证明真实 provider 能走通 decomposed planner、audit 和 trace；build smoke 证明生成工程可编译，但它使用的是 mock provider。
+讲法要保持证据匹配：real provider eval 证明真实 provider 能走通 decomposed planner、audit 和 trace；strict real provider build smoke 进一步证明单 case 真实 provider workspace 可编译；mock build smoke 是离线可复现补充。
 
 ## Development E2E Suite
 

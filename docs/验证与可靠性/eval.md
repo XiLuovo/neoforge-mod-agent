@@ -33,15 +33,16 @@ py -3.11 -m agent.cli showcase --run-name codex-development-e2e-build --llm-prov
 
 ## 当前已验证证据
 
-当前 post-merge 证据分成两层，展示时不要混在一起说：
+当前 post-merge 证据分成多层，展示时不要混在一起说：
 
 | 证据 | 命令/Run | 已证明 | 未证明 |
 |---|---|---|---|
 | real provider decomposed eval | `postmerge-real-decomposed-fragment-fix2` | real provider planning 成功，2/2 cases success，audit 2/2，expected feature/category match rate = `1.0`，trace artifacts 完整 | 未跑 Gradle build，因为使用 `--no-build` |
+| strict real provider build smoke | `real-decomposed-build-smoke` | `openai-compatible` + decomposed + `--require-llm` + `--build` 单 case 成功；planner 生成 `15` features；audit `246` checks passed；Gradle build `exit_code=0`；生成 `ruby_progression-0.1.0.jar` | 未证明 full real-provider eval build，也未证明 Minecraft runtime |
 | build smoke | `main-postmerge-build-smoke` | mock provider + decomposed planner 生成工程后，audit `280` checks passed，Gradle build `exit_code=0`，jar 已生成 | 未证明 real provider 同一 run 的 build，也未证明 Minecraft runtime |
 | unit tests | `py -3.11 -m unittest discover -s tests -v` | planner hardening、decomposed regression 和既有能力回归通过，`213 tests OK` | 不替代真实 provider 或 Gradle build |
 
-如果要进一步升级证据，可以追加一个单 case strict real provider build：
+单 case strict real provider build 的复现命令：
 
 ```powershell
 py -3.11 -m agent.cli agent develop `
@@ -55,7 +56,9 @@ py -3.11 -m agent.cli agent develop `
   --json
 ```
 
-该命令如果失败，需要分开记录 `provider_error`、planner/schema failure、audit failure、build environment failure 或 generated-code build failure。
+已验证 run `real-decomposed-build-smoke` 中 provider/model 为 `openai-compatible` / `deepseek-v4-flash`，LLM calls `16`，provider-reported total tokens `65,226`，`retry_attempts=0`、`schema_retry_attempts=0`、`json_repair_applied=false`。planner normalization warnings 包括 `compressor` 规范化为 `ruby_compressor`、6 个 progression fragments 合并为 `ruby_progression`、ore drop 和 dimension 规范化；这些是 deterministic hardening 生效的证据，不是失败。
+
+该命令如果未来复跑失败，需要分开记录 `provider_error`、planner/schema failure、audit failure、build environment failure 或 generated-code build failure。
 
 ## Mock A/B Eval Snapshot
 
