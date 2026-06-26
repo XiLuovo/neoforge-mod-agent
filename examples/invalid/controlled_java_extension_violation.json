@@ -1,0 +1,29 @@
+{
+  "mod_id": "bad_extension_mod",
+  "mod_name": "Bad Extension Mod",
+  "display_name": "Bad Extension Mod",
+  "package": "com.generated.bad_extension_mod",
+  "version": "0.1.0",
+  "description": "Negative V6.1 sandbox sample. This file is intentionally invalid and should be used with validation checks only.",
+  "features": [
+    {
+      "type": "java_extension",
+      "id": "unsafe_extension",
+      "display_name_en_us": "Unsafe Extension",
+      "class_name": "UnsafeExtension",
+      "purpose": "Demonstrate sandbox rejection for a controlled Java extension.",
+      "explanation": "This sample includes forbidden APIs so V6.1 can prove rejection before generation.",
+      "allowed_imports": [
+        "java.io.File"
+      ],
+      "methods": [
+        {
+          "name": "describe",
+          "return_type": "String",
+          "return_value": "Runtime.getRuntime()",
+          "explanation": "Unsafe process access must be rejected."
+        }
+      ]
+    }
+  ]
+}

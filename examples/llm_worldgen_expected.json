@@ -1,0 +1,28 @@
+{
+  "mod_id": "ruby_mod",
+  "mod_name": "Ruby Mod",
+  "package": "com.generated.ruby_mod",
+  "version": "0.1.0",
+  "features": [
+    {
+      "type": "ore",
+      "id": "ruby_ore",
+      "display_name_en_us": "Ruby Ore",
+      "display_name_zh_cn": "红宝石矿石",
+      "drop": "ruby_mod:ruby",
+      "strength": 3.0,
+      "resistance": 3.0,
+      "sound": "stone",
+      "requires_correct_tool": true,
+      "tool_tier": "iron",
+      "worldgen": {
+        "enabled": true,
+        "dimension": "minecraft:overworld",
+        "min_y": -64,
+        "max_y": 32,
+        "vein_size": 6,
+        "veins_per_chunk": 4
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "cases": [
+    {
+      "id": "repair_mods_toml_agentic_rag",
+      "mode": "repair",
+      "request": "Fix missing neoforge.mods.toml audit failures using cited NeoForge metadata rules.",
+      "setup_request": "Create a ruby mod with ruby.",
+      "breakage": "delete_mods_toml",
+      "max_iterations": 6
+    },
+    {
+      "id": "repair_pack_mcmeta_agentic_rag",
+      "mode": "repair",
+      "request": "Fix pack.mcmeta audit failures using cited NeoForge pack metadata rules.",
+      "setup_request": "Create a ruby mod with ruby.",
+      "breakage": "break_pack_mcmeta",
+      "max_iterations": 6
+    },
+    {
+      "id": "repair_recipe_resource_path_agentic_rag",
+      "mode": "repair",
+      "request": "Fix recipe/resource path audit failures with RAG-backed evidence.",
+      "setup_request": "Create a ruby mod with ruby sword recipes.",
+      "breakage": "break_recipe_json",
+      "max_iterations": 6
+    }
+  ]
+}

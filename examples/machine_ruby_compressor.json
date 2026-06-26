@@ -1,0 +1,106 @@
+{
+  "mod_id": "machine_mod",
+  "mod_name": "Machine Mod",
+  "package": "com.generated.machine_mod",
+  "version": "0.1.0",
+  "features": [
+    {
+      "type": "machine",
+      "id": "ruby_compressor",
+      "display_name_en_us": "Ruby Compressor",
+      "display_name_zh_cn": "",
+      "strength": 4,
+      "resistance": 6,
+      "sound": "metal",
+      "requires_correct_tool": true,
+      "tool_tier": "iron",
+      "machine_kind": "compressor",
+      "inventory_slots": 2,
+      "input_slots": 1,
+      "output_slots": 1,
+      "energy_capacity": 10000,
+      "energy_per_tick": 20,
+      "max_progress": 100,
+      "menu_title": "Ruby Compressor",
+      "behavior": {
+        "type": "event_action",
+        "events": [
+          {
+            "trigger": "server_tick",
+            "triggers": ["server_tick", "energy_low"],
+            "trigger_mode": "sequence",
+            "window_ticks": 40,
+            "cooldown_ticks": 20,
+            "state_key": "machine_mode",
+            "state_value": "charged",
+            "resource": "energy",
+            "resource_amount": 20,
+            "conditions": [
+              {
+                "type": "resource_at_least",
+                "resource": "energy",
+                "resource_amount": 20
+              },
+              {
+                "type": "state_equals",
+                "state_key": "machine_mode",
+                "state_value": "charged"
+              }
+            ],
+            "actions": [
+              {
+                "type": "set_state",
+                "state_key": "machine_mode",
+                "state_value": "charged"
+              },
+              {
+                "type": "consume_resource",
+                "resource": "energy",
+                "resource_amount": 20
+              },
+              {
+                "type": "spawn_particles",
+                "particle": "minecraft:happy_villager",
+                "count": 8
+              },
+              {
+                "type": "play_sound",
+                "sound": "minecraft:block.amethyst_block.chime",
+                "volume": 0.8,
+                "pitch": 1
+              },
+              {
+                "type": "chain_event",
+                "chain_trigger": "machine_complete",
+                "chain_target": "machine",
+                "delay_ticks": 20,
+                "chain_window_ticks": 40
+              }
+            ]
+          },
+          {
+            "trigger": "machine_complete",
+            "conditions": [
+              {
+                "type": "state_equals",
+                "state_key": "machine_mode",
+                "state_value": "charged"
+              }
+            ],
+            "actions": [
+              {
+                "type": "clear_state",
+                "state_key": "machine_mode"
+              },
+              {
+                "type": "restore_resource",
+                "resource": "energy",
+                "resource_amount": 10
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

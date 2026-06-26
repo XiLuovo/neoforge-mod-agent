@@ -1,0 +1,28 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+.tmp/
+dist/
+.gradle-user-home/
+.gradle-default-user-home/
+.playwright-mcp/
+.codex/
+AGENTS.md
+.env
+.env.*
+!.env.example
+
+workspace/*
+!workspace/.gitkeep
+
+# Local-only scratch files.
+CODING_AGENT_UPGRADE_PLAN.md
+
+# OS/editor noise.
+.DS_Store
+Thumbs.db

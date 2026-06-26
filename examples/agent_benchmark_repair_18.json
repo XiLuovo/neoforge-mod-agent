@@ -1,0 +1,202 @@
+{
+  "cases": [
+    {
+      "id": "repair_delete_mods_toml",
+      "mode": "repair",
+      "category": "metadata",
+      "request": "Fix missing neoforge.mods.toml audit failures using cited NeoForge metadata rules.",
+      "setup_request": "Create a ruby mod with ruby.",
+      "breakage": "delete_mods_toml",
+      "expected_issue_prefixes": ["project:mods_toml"],
+      "expected_repair_strategy": "structured_patch",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_break_pack_mcmeta_format",
+      "mode": "repair",
+      "category": "metadata",
+      "request": "Fix pack.mcmeta pack_format audit failures using safe structured patches, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby.",
+      "breakage": "break_pack_mcmeta_format",
+      "expected_issue_prefixes": ["project:pack_mcmeta:pack_format"],
+      "expected_repair_strategy": "structured_patch",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_corrupt_pack_mcmeta_json",
+      "mode": "repair",
+      "category": "metadata",
+      "request": "Fix invalid pack.mcmeta JSON using managed generated-file repair, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby.",
+      "breakage": "corrupt_pack_mcmeta_json",
+      "expected_issue_prefixes": ["project:pack_mcmeta:json"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_delete_item_definition",
+      "mode": "repair",
+      "category": "asset_resource",
+      "request": "Fix missing generated item definition resources, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby.",
+      "breakage": "delete_item_definition",
+      "expected_issue_prefixes": ["item:"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_delete_item_model",
+      "mode": "repair",
+      "category": "asset_resource",
+      "request": "Fix missing generated item model resources, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby.",
+      "breakage": "delete_item_model",
+      "expected_issue_prefixes": ["item:"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_corrupt_item_texture_png",
+      "mode": "repair",
+      "category": "asset_resource",
+      "request": "Fix corrupt generated PNG texture resources, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby.",
+      "breakage": "corrupt_item_texture_png",
+      "expected_issue_prefixes": ["item:"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_delete_blockstate",
+      "mode": "repair",
+      "category": "asset_resource",
+      "request": "Fix missing generated blockstate resources, then rerun audit.",
+      "setup_request": "Create a ruby mod with a ruby block.",
+      "breakage": "delete_blockstate",
+      "expected_issue_prefixes": ["block:"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_delete_block_loot_table",
+      "mode": "repair",
+      "category": "asset_resource",
+      "request": "Fix missing generated block loot table data, then rerun audit.",
+      "setup_request": "Create a ruby mod with a ruby block.",
+      "breakage": "delete_block_loot_table",
+      "expected_issue_prefixes": ["block:"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_remove_lang_entry",
+      "mode": "repair",
+      "category": "asset_resource",
+      "request": "Fix missing generated language entries, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby.",
+      "breakage": "remove_lang_entry",
+      "expected_issue_prefixes": ["item:"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_delete_recipe_file",
+      "mode": "repair",
+      "category": "data_worldgen",
+      "request": "Fix missing generated recipe JSON data, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby item, ruby block, and recipes.",
+      "breakage": "delete_recipe_file",
+      "expected_issue_prefixes": ["recipe:"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_corrupt_recipe_json",
+      "mode": "repair",
+      "category": "data_worldgen",
+      "request": "Fix invalid generated recipe JSON data, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby item, ruby block, and recipes.",
+      "breakage": "corrupt_recipe_json",
+      "expected_issue_prefixes": ["recipe:"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_break_recipe_reference",
+      "mode": "repair",
+      "category": "data_worldgen",
+      "request": "Fix recipe/resource path audit failures with RAG-backed evidence.",
+      "setup_request": "Create a ruby mod with ruby sword recipes.",
+      "breakage": "break_recipe_reference",
+      "expected_issue_prefixes": ["recipe:"],
+      "expected_repair_strategy": "structured_patch",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_delete_ore_configured_feature",
+      "mode": "repair",
+      "category": "data_worldgen",
+      "request": "Fix missing ore configured feature worldgen data, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby and ruby ore. Ruby ore drops ruby and generates in the overworld underground with Y -64 to 32, vein size 6, count 4.",
+      "breakage": "delete_ore_configured_feature",
+      "expected_issue_prefixes": ["ore:"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_break_ore_rule_test",
+      "mode": "repair",
+      "category": "data_worldgen",
+      "request": "Fix malformed ore configured feature rule-test data, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby and ruby ore. Ruby ore drops ruby and generates in the overworld underground with Y -64 to 32, vein size 6, count 4.",
+      "breakage": "break_ore_rule_test",
+      "expected_issue_prefixes": ["ore:"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_delete_ore_biome_modifier",
+      "mode": "repair",
+      "category": "data_worldgen",
+      "request": "Fix missing ore biome modifier worldgen data, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby and ruby ore. Ruby ore drops ruby and generates in the overworld underground with Y -64 to 32, vein size 6, count 4.",
+      "breakage": "delete_ore_biome_modifier",
+      "expected_issue_prefixes": ["ore:"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_delete_behavior_item_java",
+      "mode": "repair",
+      "category": "generated_code",
+      "request": "Fix missing generated behavior item Java sources, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby charm, right click heal 4 health, cooldown 20 seconds.",
+      "breakage": "delete_behavior_item_java",
+      "expected_issue_prefixes": ["item:"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_delete_machine_block_entity_java",
+      "mode": "repair",
+      "category": "generated_code",
+      "request": "Fix missing generated machine BlockEntity Java sources, then rerun audit.",
+      "setup_request": "Create a recipe loot balance economy gameplay loop with rarity, machine cost, and energy cost.",
+      "breakage": "delete_machine_block_entity_java",
+      "expected_issue_prefixes": ["machine:"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "repair_delete_entity_spawn_modifier",
+      "mode": "repair",
+      "category": "generated_code",
+      "request": "Fix missing generated entity spawn biome modifier data, then rerun audit.",
+      "setup_request": "Create a ruby goblin mob with melee attack, emerald drops, and overworld spawn.",
+      "breakage": "delete_entity_spawn_modifier",
+      "expected_issue_prefixes": ["entity:"],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    }
+  ]
+}

@@ -1,0 +1,252 @@
+{
+  "mod_id": "balance_mod",
+  "mod_name": "Balance Mod",
+  "package": "com.generated.balance_mod",
+  "version": "0.1.0",
+  "features": [
+    {
+      "type": "item",
+      "id": "raw_ruby",
+      "display_name_en_us": "Raw Ruby",
+      "display_name_zh_cn": "粗红宝石"
+    },
+    {
+      "type": "item",
+      "id": "ruby",
+      "display_name_en_us": "Ruby",
+      "display_name_zh_cn": "红宝石"
+    },
+    {
+      "type": "item",
+      "id": "ruby_key",
+      "display_name_en_us": "Ruby Key",
+      "display_name_zh_cn": "红宝石钥匙"
+    },
+    {
+      "type": "ore",
+      "id": "ruby_ore",
+      "display_name_en_us": "Ruby Ore",
+      "display_name_zh_cn": "红宝石矿石",
+      "drop": "balance_mod:raw_ruby",
+      "strength": 3.0,
+      "resistance": 3.0,
+      "sound": "stone",
+      "requires_correct_tool": true,
+      "tool_tier": "iron",
+      "worldgen": {
+        "enabled": true,
+        "dimension": "minecraft:overworld",
+        "min_y": -48,
+        "max_y": 32,
+        "vein_size": 6,
+        "veins_per_chunk": 4
+      }
+    },
+    {
+      "type": "machine",
+      "id": "ruby_compressor",
+      "display_name_en_us": "Ruby Compressor",
+      "display_name_zh_cn": "红宝石压缩机",
+      "strength": 4.0,
+      "resistance": 6.0,
+      "sound": "metal",
+      "requires_correct_tool": true,
+      "tool_tier": "iron",
+      "machine_kind": "compressor",
+      "inventory_slots": 2,
+      "input_slots": 1,
+      "output_slots": 1,
+      "energy_capacity": 10000,
+      "energy_per_tick": 20,
+      "max_progress": 100
+    },
+    {
+      "type": "sword",
+      "id": "ruby_sword",
+      "display_name_en_us": "Ruby Sword",
+      "display_name_zh_cn": "红宝石剑",
+      "attack_damage_bonus": 4,
+      "attack_speed": -2.4,
+      "tool_material": "ruby"
+    },
+    {
+      "type": "recipe",
+      "id": "raw_ruby_to_ruby",
+      "recipe_type": "shapeless",
+      "ingredients": ["balance_mod:raw_ruby"],
+      "result": "balance_mod:ruby",
+      "count": 1,
+      "category": "misc",
+      "group": "ruby_balance"
+    },
+    {
+      "type": "recipe",
+      "id": "ruby_sword",
+      "recipe_type": "shaped",
+      "pattern": [" R ", " R ", " S "],
+      "keys": {
+        "R": "balance_mod:ruby",
+        "S": "minecraft:stick"
+      },
+      "result": "balance_mod:ruby_sword",
+      "count": 1,
+      "category": "equipment",
+      "group": "ruby_balance"
+    },
+    {
+      "type": "entity",
+      "id": "ruby_sentinel",
+      "display_name_en_us": "Ruby Sentinel",
+      "display_name_zh_cn": "红宝石守卫",
+      "entity_kind": "monster",
+      "category": "monster",
+      "width": 0.8,
+      "height": 2.1,
+      "tracking_range": 12,
+      "update_interval": 3,
+      "xp_reward": 12,
+      "attributes": {
+        "max_health": 32,
+        "movement_speed": 0.24,
+        "attack_damage": 6,
+        "armor": 4,
+        "follow_range": 28,
+        "knockback_resistance": 0.1
+      },
+      "drops": [
+        {
+          "item": "balance_mod:ruby_key",
+          "min_count": 1,
+          "max_count": 1,
+          "chance": 0.65
+        }
+      ],
+      "spawn": {
+        "enabled": true,
+        "biomes": "#minecraft:is_overworld",
+        "weight": 20,
+        "min_count": 1,
+        "max_count": 1,
+        "placement": "on_ground"
+      },
+      "goals": [
+        { "type": "float", "priority": 0 },
+        { "type": "melee_attack", "priority": 2, "speed": 1.05 },
+        { "type": "target_player", "priority": 3 }
+      ],
+      "attack": { "type": "melee", "damage": 6, "speed": 1.05 }
+    },
+    {
+      "type": "loot_pool",
+      "id": "ruby_cache_loot",
+      "display_name_en_us": "Ruby Cache Loot",
+      "display_name_zh_cn": "红宝石宝箱战利品",
+      "table_kind": "chest",
+      "rolls": 2,
+      "entries": [
+        {
+          "item": "balance_mod:ruby",
+          "min_count": 2,
+          "max_count": 5,
+          "weight": 4
+        },
+        {
+          "item": "balance_mod:ruby_key",
+          "min_count": 1,
+          "max_count": 1,
+          "weight": 1,
+          "chance": 0.5
+        },
+        {
+          "item": "balance_mod:ruby_sword",
+          "min_count": 1,
+          "max_count": 1,
+          "weight": 1,
+          "chance": 0.35
+        }
+      ]
+    },
+    {
+      "type": "progression",
+      "id": "ruby_progression",
+      "title": "Ruby Economy Loop",
+      "summary": "A compact route for testing recipe, loot, rarity, machine timing, energy, and reward-weight planning.",
+      "entry_stage": "mine_ruby_ore",
+      "end_stage": "open_ruby_cache",
+      "stages": [
+        {
+          "id": "mine_ruby_ore",
+          "type": "ore",
+          "title": "Mine Ruby Ore",
+          "provides": ["raw_ruby"],
+          "evidence": ["ruby_ore"]
+        },
+        {
+          "id": "refine_raw_ruby",
+          "type": "material",
+          "title": "Refine Raw Ruby",
+          "requires": ["raw_ruby"],
+          "provides": ["ruby"],
+          "evidence": ["recipe:raw_ruby_to_ruby"]
+        },
+        {
+          "id": "process_with_machine",
+          "type": "machine",
+          "title": "Process With Ruby Compressor",
+          "requires": ["ruby"],
+          "unlocks": ["ruby_sword"],
+          "evidence": ["ruby_compressor"]
+        },
+        {
+          "id": "craft_equipment",
+          "type": "equipment",
+          "title": "Craft Ruby Sword",
+          "requires": ["ruby"],
+          "provides": ["ruby_sword"],
+          "evidence": ["ruby_sword", "recipe:ruby_sword"]
+        },
+        {
+          "id": "defeat_ruby_sentinel",
+          "type": "entity",
+          "title": "Defeat Ruby Sentinel",
+          "requires": ["ruby_sword"],
+          "provides": ["ruby_key"],
+          "evidence": ["ruby_sentinel"]
+        },
+        {
+          "id": "open_ruby_cache",
+          "type": "loot_pool",
+          "title": "Open Ruby Cache",
+          "requires": ["ruby_key"],
+          "evidence": ["ruby_cache_loot"]
+        }
+      ],
+      "links": [
+        { "from": "mine_ruby_ore", "to": "refine_raw_ruby", "trigger": "ore_drop", "requirement": "Collect raw_ruby" },
+        { "from": "refine_raw_ruby", "to": "process_with_machine", "trigger": "recipe_complete", "requirement": "Craft ruby" },
+        { "from": "process_with_machine", "to": "craft_equipment", "trigger": "machine_progress_complete", "requirement": "Use ruby_compressor" },
+        { "from": "craft_equipment", "to": "defeat_ruby_sentinel", "trigger": "combat", "requirement": "Equip ruby_sword" },
+        { "from": "defeat_ruby_sentinel", "to": "open_ruby_cache", "trigger": "drop", "requirement": "Obtain ruby_key" }
+      ]
+    },
+    {
+      "type": "balance_plan",
+      "id": "ruby_balance_plan",
+      "title": "Ruby Economy Balance Plan",
+      "target_progression": "ruby_progression",
+      "profile": "standard",
+      "summary": "Plan missing recipes, rarity, drop chances, machine timing, energy cost, and chest loot weights for the ruby loop."
+    }
+  ],
+  "requested_features": [
+    "Items",
+    "Ores",
+    "Machines",
+    "Swords",
+    "Recipes",
+    "Entities",
+    "Loot Pools",
+    "Progression",
+    "Balance Planner"
+  ]
+}

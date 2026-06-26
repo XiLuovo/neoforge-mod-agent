@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neoforge-mod-agent"
+version = "8.5.0"
+description = "Controlled Coding Agent for Minecraft NeoForge mods: ModSpec-first planning, deterministic generation, tool-calling repair/refine, audit/build gates, and trace-backed evidence."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+neoforge-agent = "neoforge_agent.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

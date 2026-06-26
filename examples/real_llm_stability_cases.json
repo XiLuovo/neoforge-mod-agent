@@ -1,0 +1,95 @@
+{
+  "cases": [
+    {
+      "id": "basic_ruby",
+      "mode": "generate",
+      "request": "Create a ruby mod with ruby.",
+      "expected_features": ["ruby"],
+      "expected_categories": ["item"]
+    },
+    {
+      "id": "ruby_charm_behavior",
+      "mode": "generate",
+      "request": "Create a ruby charm item that heals 4 health on right click with 20 seconds cooldown.",
+      "expected_features": ["ruby_charm"],
+      "expected_categories": ["item", "behavior", "right_click_heal"]
+    },
+    {
+      "id": "speed_crystal_behavior",
+      "mode": "generate",
+      "request": "Create a speed crystal item that grants speed II for 10 seconds.",
+      "expected_features": ["speed_crystal"],
+      "expected_categories": ["item", "behavior", "right_click_effect"]
+    },
+    {
+      "id": "ruby_apple_effect",
+      "mode": "generate",
+      "request": "Create a ruby apple that grants regeneration II for 5 seconds.",
+      "expected_features": ["ruby_apple"],
+      "expected_categories": ["food", "behavior", "food_effect"]
+    },
+    {
+      "id": "ruby_sword_ignite",
+      "mode": "generate",
+      "request": "Create a ruby sword that ignites enemies for 5 seconds.",
+      "expected_features": ["ruby_sword"],
+      "expected_categories": ["sword", "behavior", "sword_ignite"]
+    },
+    {
+      "id": "ruby_pickaxe_tool",
+      "mode": "generate",
+      "request": "Create a ruby mod with ruby pickaxe.",
+      "expected_features": ["ruby_pickaxe"],
+      "expected_categories": ["tool"]
+    },
+    {
+      "id": "ruby_tool_set",
+      "mode": "generate",
+      "request": "Create a ruby mod with ruby tool set.",
+      "expected_features": ["ruby_sword", "ruby_pickaxe", "ruby_axe", "ruby_shovel", "ruby_hoe"],
+      "expected_categories": ["item", "sword", "tool", "recipe"]
+    },
+    {
+      "id": "ruby_armor_set",
+      "mode": "generate",
+      "request": "Create a ruby mod with ruby armor set.",
+      "expected_features": ["ruby_helmet", "ruby_chestplate", "ruby_leggings", "ruby_boots"],
+      "expected_categories": ["item", "armor", "recipe"]
+    },
+    {
+      "id": "ruby_block_variants",
+      "mode": "generate",
+      "request": "Create a ruby mod with ruby block variants.",
+      "expected_features": ["ruby_block", "ruby_stairs", "ruby_slab", "ruby_wall", "ruby_button", "ruby_pressure_plate", "ruby_fence", "ruby_fence_gate", "ruby_door", "ruby_trapdoor"],
+      "expected_categories": ["item", "block", "recipe", "block_variants", "interactive_blocks"]
+    },
+    {
+      "id": "ruby_ore_worldgen",
+      "mode": "generate",
+      "request": "Create a ruby mod where ruby ore generates underground in the overworld, Y -64 to 32, vein size 6, 4 per chunk.",
+      "expected_features": ["ruby", "ruby_ore"],
+      "expected_categories": ["item", "ore", "worldgen"]
+    },
+    {
+      "id": "ruby_goblin_entity",
+      "mode": "generate",
+      "request": "Create a ruby goblin monster entity that spawns naturally in the overworld and drops ruby.",
+      "expected_features": ["ruby_goblin"],
+      "expected_categories": ["entity"]
+    },
+    {
+      "id": "ruby_realm_world_structure",
+      "mode": "generate",
+      "request": "Create a ruby realm dimension with a ruby biome, ruby vein feature, ruby shrine structure, and shrine loot pool.",
+      "expected_features": ["ruby_realm", "ruby_fields", "ruby_vein", "ruby_shrine"],
+      "expected_categories": ["dimension", "biome", "worldgen", "structure"]
+    },
+    {
+      "id": "progression_gameplay_loop",
+      "mode": "generate",
+      "request": "Create a ruby progression gameplay loop with ruby ore, a compressor machine, ruby tools, and advancement-style progression milestones.",
+      "expected_features": ["ruby_progression"],
+      "expected_categories": ["progression", "machine", "tool"]
+    }
+  ]
+}

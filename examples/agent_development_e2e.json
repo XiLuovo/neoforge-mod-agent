@@ -1,0 +1,43 @@
+{
+  "cases": [
+    {
+      "id": "develop_progression_loop",
+      "mode": "generate",
+      "request": "Create a ruby progression gameplay loop with ruby ore worldgen in the overworld, a compressor machine, ruby tools, recipes, and an auditable progression report.",
+      "expected_features": [
+        "ruby_ore",
+        "ruby_compressor",
+        "ruby_pickaxe",
+        "ruby_sword",
+        "ruby_progression"
+      ],
+      "expected_categories": [
+        "item",
+        "ore",
+        "worldgen",
+        "machine",
+        "tool",
+        "sword",
+        "recipe",
+        "progression",
+        "progression_report"
+      ]
+    },
+    {
+      "id": "modify_add_worldgen_repeat",
+      "mode": "modify",
+      "setup_request": "Create a ruby mod with ruby and ruby ore.",
+      "request": "Add ruby ore worldgen in the overworld, Y -64 to 32, vein size 6, 4 per chunk.",
+      "expected_features": [
+        "ruby_ore"
+      ],
+      "expected_categories": [
+        "ore",
+        "worldgen",
+        "ore_worldgen",
+        "modify"
+      ],
+      "repeat_request": true
+    }
+  ]
+}

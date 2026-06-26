@@ -1,0 +1,138 @@
+{
+  "mod_id": "entity_mod",
+  "mod_name": "Entity Mod",
+  "package": "com.generated.entity_mod",
+  "version": "0.1.0",
+  "description": "V5.3 Entity / Mob DSL demo for a simple hostile mob.",
+  "features": [
+    {
+      "type": "entity",
+      "id": "ruby_goblin",
+      "display_name_en_us": "Ruby Goblin",
+      "display_name_zh_cn": "Ruby Goblin",
+      "entity_kind": "monster",
+      "category": "monster",
+      "width": 0.6,
+      "height": 1.35,
+      "tracking_range": 10,
+      "update_interval": 3,
+      "xp_reward": 5,
+      "fire_immune": false,
+      "attributes": {
+        "max_health": 24,
+        "movement_speed": 0.27,
+        "attack_damage": 4,
+        "armor": 2,
+        "follow_range": 28,
+        "knockback_resistance": 0
+      },
+      "drops": [
+        {
+          "item": "minecraft:emerald",
+          "min_count": 1,
+          "max_count": 2,
+          "chance": 0.5
+        }
+      ],
+      "spawn": {
+        "enabled": true,
+        "biomes": "#minecraft:is_overworld",
+        "weight": 80,
+        "min_count": 1,
+        "max_count": 3,
+        "placement": "on_ground"
+      },
+      "goals": [
+        { "type": "float", "priority": 0 },
+        { "type": "melee_attack", "priority": 2, "speed": 1.1 },
+        { "type": "random_stroll", "priority": 5, "speed": 0.9 },
+        { "type": "look_at_player", "priority": 6, "distance": 8 },
+        { "type": "random_look_around", "priority": 7 },
+        { "type": "hurt_by_target", "priority": 1 },
+        { "type": "target_player", "priority": 2 }
+      ],
+      "attack": {
+        "type": "melee",
+        "damage": 4,
+        "speed": 1.1
+      },
+      "behavior": {
+        "type": "event_action",
+        "events": [
+          {
+            "trigger": "spawn",
+            "triggers": ["spawn", "entity_tick"],
+            "trigger_mode": "sequence",
+            "window_ticks": 80,
+            "state_key": "rage",
+            "state_value": 1,
+            "resource": "rage",
+            "resource_amount": 10,
+            "actions": [
+              {
+                "type": "set_state",
+                "state_key": "rage",
+                "state_value": 1
+              },
+              {
+                "type": "spawn_particles",
+                "particle": "minecraft:happy_villager",
+                "count": 8
+              },
+              {
+                "type": "play_sound",
+                "sound": "minecraft:entity.experience_orb.pickup",
+                "volume": 0.8,
+                "pitch": 1.1
+              },
+              {
+                "type": "chain_event",
+                "chain_trigger": "hurt",
+                "chain_target": "self",
+                "delay_ticks": 20,
+                "chain_window_ticks": 40
+              }
+            ]
+          },
+          {
+            "trigger": "hurt",
+            "cooldown_ticks": 20,
+            "conditions": [
+              {
+                "type": "health_below",
+                "threshold": 12
+              },
+              {
+                "type": "resource_at_least",
+                "resource": "rage",
+                "resource_amount": 10
+              }
+            ],
+            "actions": [
+              {
+                "type": "increment_state",
+                "state_key": "rage",
+                "state_delta": 1
+              },
+              {
+                "type": "apply_effect",
+                "target": "self",
+                "effect": "minecraft:speed",
+                "duration_ticks": 100,
+                "amplifier": 1
+              },
+              {
+                "type": "spawn_particles",
+                "particle": "minecraft:heart",
+                "count": 2
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "requested_features": [
+    "Entities"
+  ]
+}

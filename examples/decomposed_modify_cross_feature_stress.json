@@ -1,0 +1,75 @@
+{
+  "cases": [
+    {
+      "id": "modify_cross_feature_item_tool_recipe_worldgen",
+      "mode": "modify",
+      "setup_request": "Create a ruby mod with ruby.",
+      "request": "Stress Decomposed Modify v2 across item behavior, tool recipe, and ore worldgen updates.",
+      "modify_steps": [
+        {
+          "id": "add_behavior_item",
+          "request": "Add a ruby charm item that heals 4 health on right click with 20 seconds cooldown."
+        },
+        {
+          "id": "add_tool_recipe",
+          "request": "Add a ruby pickaxe crafted from three rubies and two sticks.",
+          "repeat_request": true
+        },
+        {
+          "id": "add_ore_worldgen",
+          "request": "Add ruby ore worldgen in the overworld, Y -64 to 32, vein size 6, 4 per chunk."
+        }
+      ],
+      "expected_features": [
+        "ruby_charm",
+        "ruby_pickaxe",
+        "ruby_ore"
+      ],
+      "expected_categories": [
+        "item",
+        "behavior",
+        "right_click_heal",
+        "tool",
+        "recipe",
+        "ore",
+        "worldgen",
+        "ore_worldgen",
+        "modify"
+      ]
+    },
+    {
+      "id": "modify_cross_feature_progression_conflict",
+      "mode": "modify",
+      "setup_request": "Create a ruby progression gameplay loop with ruby ore worldgen in the overworld, a compressor machine, ruby tools, recipes, and an auditable progression report.",
+      "request": "Stress Decomposed Modify v2 across existing ore updates and progression final-stage merge.",
+      "modify_steps": [
+        {
+          "id": "update_existing_worldgen",
+          "request": "Add ruby ore worldgen in the overworld, Y -64 to 32, vein size 6, 4 per chunk."
+        },
+        {
+          "id": "update_progression_final_stage",
+          "request": "Update the ruby progression so entering the ruby realm unlocks a final mastery milestone stage with ruby_sword and ruby_pickaxe evidence.",
+          "repeat_request": true
+        }
+      ],
+      "expected_features": [
+        "ruby_ore",
+        "ruby_pickaxe",
+        "ruby_sword",
+        "ruby_progression"
+      ],
+      "expected_categories": [
+        "ore",
+        "worldgen",
+        "ore_worldgen",
+        "tool",
+        "sword",
+        "recipe",
+        "progression",
+        "progression_report",
+        "modify"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "mod_id": "resource_mod",
+  "mod_name": "Resource Quality Mod",
+  "package": "com.generated.resource_mod",
+  "version": "0.1.0",
+  "features": [
+    {
+      "type": "item",
+      "id": "ruby",
+      "display_name_en_us": "Ruby",
+      "display_name_zh_cn": "红宝石"
+    },
+    {
+      "type": "block",
+      "id": "polished_ruby_block",
+      "display_name_en_us": "Polished Ruby Block",
+      "display_name_zh_cn": "抛光红宝石块",
+      "strength": 3.0,
+      "resistance": 4.0,
+      "sound": "stone",
+      "requires_correct_tool": true,
+      "tool_tier": "iron",
+      "block_kind": "cube"
+    },
+    {
+      "type": "block",
+      "id": "polished_ruby_stairs",
+      "display_name_en_us": "Polished Ruby Stairs",
+      "display_name_zh_cn": "抛光红宝石楼梯",
+      "strength": 3.0,
+      "resistance": 4.0,
+      "sound": "stone",
+      "requires_correct_tool": true,
+      "tool_tier": "iron",
+      "block_kind": "stairs",
+      "base_block": "polished_ruby_block"
+    },
+    {
+      "type": "structure",
+      "id": "ruby_gallery",
+      "display_name_en_us": "Ruby Gallery",
+      "display_name_zh_cn": "红宝石展厅",
+      "structure_kind": "jigsaw",
+      "biomes": "#minecraft:is_overworld",
+      "step": "surface_structures",
+      "terrain_adaptation": "beard_thin",
+      "spacing": 32,
+      "separation": 8,
+      "salt": 8062026,
+      "size": 1,
+      "start_height": 64
+    }
+  ],
+  "requested_features": [
+    "Items",
+    "Blocks",
+    "Block Variants",
+    "Structures",
+    "Resource Quality"
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "cases": [
+    {
+      "id": "focused_repair_delete_mods_toml",
+      "mode": "repair",
+      "category": "metadata",
+      "request": "Fix missing neoforge.mods.toml audit failures using cited NeoForge metadata rules.",
+      "setup_request": "Create a ruby mod with ruby.",
+      "breakage": "delete_mods_toml",
+      "expected_issue_prefixes": [
+        "project:mods_toml"
+      ],
+      "expected_repair_strategy": "structured_patch",
+      "max_iterations": 7
+    },
+    {
+      "id": "focused_repair_break_pack_mcmeta_format",
+      "mode": "repair",
+      "category": "metadata",
+      "request": "Fix pack.mcmeta pack_format audit failures using safe structured patches, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby.",
+      "breakage": "break_pack_mcmeta_format",
+      "expected_issue_prefixes": [
+        "project:pack_mcmeta:pack_format"
+      ],
+      "expected_repair_strategy": "structured_patch",
+      "max_iterations": 7
+    },
+    {
+      "id": "focused_repair_delete_item_model",
+      "mode": "repair",
+      "category": "asset_resource",
+      "request": "Fix missing generated item model resources, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby.",
+      "breakage": "delete_item_model",
+      "expected_issue_prefixes": [
+        "item:"
+      ],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "focused_repair_break_recipe_reference",
+      "mode": "repair",
+      "category": "data_worldgen",
+      "request": "Fix recipe/resource path audit failures with RAG-backed evidence.",
+      "setup_request": "Create a ruby mod with ruby sword recipes.",
+      "breakage": "break_recipe_reference",
+      "expected_issue_prefixes": [
+        "recipe:"
+      ],
+      "expected_repair_strategy": "structured_patch",
+      "max_iterations": 7
+    },
+    {
+      "id": "focused_repair_delete_ore_configured_feature",
+      "mode": "repair",
+      "category": "data_worldgen",
+      "request": "Fix missing ore configured feature worldgen data, then rerun audit.",
+      "setup_request": "Create a ruby mod with ruby and ruby ore. Ruby ore drops ruby and generates in the overworld underground with Y -64 to 32, vein size 6, count 4.",
+      "breakage": "delete_ore_configured_feature",
+      "expected_issue_prefixes": [
+        "ore:"
+      ],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    },
+    {
+      "id": "focused_repair_delete_machine_block_entity_java",
+      "mode": "repair",
+      "category": "generated_code",
+      "request": "Fix missing generated machine BlockEntity Java sources, then rerun audit.",
+      "setup_request": "Create a recipe loot balance economy gameplay loop with rarity, machine cost, and energy cost.",
+      "breakage": "delete_machine_block_entity_java",
+      "expected_issue_prefixes": [
+        "machine:"
+      ],
+      "expected_repair_strategy": "regenerate_managed_files",
+      "max_iterations": 7
+    }
+  ]
+}
