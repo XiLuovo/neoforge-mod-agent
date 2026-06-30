@@ -4,17 +4,80 @@
 
 ## 一句话结论
 
-mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以在可复现 case 上进入 ModSpec、生成和 audit gate，并且失败会被拆成 provider、schema、audit、build、runtime、fallback 等类别。最新 13 case 真实跑批暴露出 1 个复杂世界/结构 prompt 的 schema failure，因此当前证据不是“所有 prompt 都稳定成功”，而是“成功率、失败类型和证据边界都能被解释”。
+mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以在可复现 case 上进入 ModSpec、生成和 audit gate，并且失败会被拆成 provider、schema、audit、build、runtime、fallback 等类别。当前证据不是“所有 prompt 都稳定成功”，而是“成功率、失败类型、token 成本和证据边界都能被解释”。
 
-当前对外统计口径：最新 13 个 no-build + audit real LLM case 中 `12/13` strict success，`1/13` schema failure，provider/audit/fallback failure 均为 `0`，没有传入 runtime evidence，因此 `13/13` 只能记为 runtime unverified；额外历史 3 个 build case 中 provider/schema/audit 全部通过，依赖重试后 `3/3` strict generated projects 可 Gradle build；本地 unittest 当前可发现 193 个 case，2026-06-10 最近一次完整回归 193/193 通过。
+当前对外统计口径分层说明：
+
+- decomposed planner A/B：5 个 real-provider generate case 中，decomposed planner `5/5` strict success、audit `5/5`、fallback `0`；相比 full-schema planner，provider-reported total tokens 从 `254,310` 降到 `5,875`，约降 `97.7%`。
+- decomposed 13-case smoke：`12/13` strict real LLM success，audit `12/13`，fallback `0`，total tokens `22,904`；唯一失败是 `ruby_realm_world_structure`，属于 dimension / biome / structure / loot 复合世界生成的 planner/schema 覆盖边界。
+- runtime 边界：没有传入 runtime evidence 的 case 只能记为 runtime unverified，不能表述成 Minecraft 客户端或服务端内验证通过。
+- build 边界：代表性 real-provider generated workspaces 有 Gradle build follow-up；额外历史 3 个 build case 中 provider/schema/audit 全部通过，依赖重试后 `3/3` strict generated projects 可 Gradle build。
 
 ## 证据清单
 
 | 实验 | 日期 | 配置 | 结果 | 证明范围 |
 | --- | --- | --- | --- | --- |
+| `decomposed-planner-5case-ab` | 2026-06-26 | real provider, audit, no build, no runtime evidence | decomposed `5/5` strict success；audit `5/5`；fallback `0`；total tokens `5,875`；相比 full-schema total tokens 降约 `97.7%` | decomposed planner 相比 full-schema 大 prompt 的 token、延迟和稳定性差异 |
+| `decomposed-real-llm-13case-smoke` | 2026-06-26 | real provider, decomposed planner, audit, no build, no runtime evidence | `12/13` strict real LLM success；audit `12/13`；fallback `0`；total tokens `22,904` | decomposed planner 在垂直领域 13-case 集合上的真实 provider 稳定性和覆盖边界 |
 | `real-llm-13case-runtime-upgrade` | 2026-06-05 | real provider, audit, no build, no runtime evidence | `12/13` strict real LLM success；`1` schema failure；`13` runtime unverified | 真实 provider 13 case 稳定性、失败分类、runtime 证据边界 |
 | `real-llm-10case-after-fix` | 2026-06-04 | real provider, audit, no build | `10/10` strict real LLM success | 真实模型到 ModSpec、生成器、audit 的稳定性 |
 | `real-llm-build-3case-20260604-223533` | 2026-06-04 | real provider, audit, build | 原始统计 `1/3` build success；依赖重试后 `3/3` build success | 真实模型生成项目的 Gradle 编译可行性，以及外部依赖失败分类 |
+
+## Decomposed Planner A/B
+
+运行配置：
+
+- provider: `openai-compatible`
+- model: `deepseek-v4-flash-ascend`
+- response format: none
+- cases: 5 个 generate case
+- mode: strict real LLM, audit enabled, build disabled
+- runtime evidence: none
+
+结果：
+
+| Planner | Strict real LLM | Audit | Fallback | Input Tokens | Output Tokens | Total Tokens | Avg Latency |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `decomposed` | `5/5` | `5/5` | `0` | `3,543` | `2,332` | `5,875` | `25.1s` |
+| `full-schema llm` | `5/5*` | `5/5` | `0` | `247,395` | `6,915` | `254,310` | `44.7s` |
+
+`Input Tokens`、`Output Tokens` 和 `Total Tokens` 均来自 provider usage 字段，不是按 prompt 文本估算。`full-schema llm` 的批量运行曾有一个 case 返回空输出并触发 schema failure，单独重试后通过，所以公开说明时写作 `5/5*`，并保留稳定性边界。这个对比证明的是 planner 拆分对 prompt 体量、延迟和长上下文稳定性的影响，不证明 Minecraft runtime。
+
+关键结论：
+
+- decomposed planner 将输入 token 从 `247,395` 降到 `3,543`，约降 `98.6%`。
+- decomposed planner 将 total tokens 从 `254,310` 降到 `5,875`，约降 `97.7%`。
+- 平均延迟从 `44.7s` 降到 `25.1s`。
+- decomposed planner 在 5-case 批量 strict run 中没有 fallback；full-schema planner 的长上下文批量运行出现过空输出，需要单 case 重试。
+
+## Decomposed 13-Case Smoke
+
+运行配置：
+
+- provider: `openai-compatible`
+- model: `deepseek-v4-flash-ascend`
+- response format: none
+- planner: `decomposed`
+- cases: 13 个 generate case
+- mode: strict real LLM, audit enabled, build disabled
+- timeout: 每次 provider request 900s
+- runtime evidence: none
+
+结果：
+
+| Metric | Value |
+|---|---:|
+| Target cases | `13` |
+| Strict real LLM success | `12/13` |
+| Audit success | `12/13` |
+| Representative Gradle build smoke | `2/2` |
+| Fallback used | `0` |
+| Total tokens | `22,904` |
+| Average latency on successful cases | `46.4s` |
+
+通过 case 包括 `basic_ruby`、`ruby_charm_behavior`、`speed_crystal_behavior`、`ruby_apple_effect`、`ruby_sword_ignite`、`ruby_pickaxe_tool`、`ruby_tool_set`、`ruby_armor_set`、`ruby_block_variants`、`ruby_ore_worldgen`、`ruby_goblin_entity` 和 `progression_gameplay_loop`。
+
+失败 case 是 `ruby_realm_world_structure`。观察到的原因是 decomposed planner 当前 feature-plan 路径没有完整覆盖或保留 `dimension`、`biome`、`world_feature`、`structure`、`loot_pool` 复合世界生成能力，后续规范化 ModSpec 时围绕 ore drop reference 产生不合法结构。这是 planner/schema 覆盖边界，不是 provider timeout，不是 JSON mode 兼容问题，也不是 Minecraft runtime 失败。
 
 ## 13 Case Runtime Upgrade Run
 

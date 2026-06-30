@@ -42,6 +42,16 @@ py -3.11 -m agent.cli showcase --run-name public-build-smoke --llm-provider mock
 
 最近一次本地 build smoke `public-build-smoke-clean` 结果：showcase 5/5 pass，doctor 22 pass / 0 warning / 0 fail，development e2e 2/2 success，audit 2/2，Gradle build 2/2，生成 `progression_mod-0.1.0.jar` 和 `ruby_mod-0.1.0.jar`。该结果证明 generated workspace 的 Gradle build gate 通过，仍不等于 Minecraft runtime 自动验收。
 
+真实 provider 证据建议作为单独一层展示，不和 mock / CI smoke 混写：
+
+| Evidence | Result | 展示边界 |
+|---|---:|---|
+| Decomposed planner A/B | 5-case real-provider strict `5/5`，audit `5/5`，fallback `0`；相比 full-schema planner，provider-reported total tokens `254,310 -> 5,875`，约降 `97.7%`，平均延迟 `44.7s -> 25.1s` | full-schema batch 原始运行有 1 个空输出 case，单独重试后通过，因此说明成 `5/5*` 更准确 |
+| Decomposed 13-case smoke | `12/13` strict real LLM success，audit `12/13`，fallback `0`，total tokens `22,904` | 唯一失败 `ruby_realm_world_structure` 是 dimension / biome / structure / loot 复合世界生成的 planner/schema 覆盖边界 |
+| Representative build follow-up | 代表性 real-provider generated workspaces 有 Gradle build smoke 和 jar evidence | 只能证明 workspace 级 build gate，不证明 Minecraft runtime 自动验收 |
+
+推荐讲法：mock 证明工程链路可复现；real provider 证明模型输出能进入 ModSpec、deterministic generator 和 audit gate；build follow-up 证明代表性 workspace 可编译；runtime 需要额外 manual runtime evidence。
+
 Fast mock showcase:
 
 ```powershell

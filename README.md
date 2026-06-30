@@ -64,6 +64,18 @@ Generated workspaces and reports are written under `workspace/`. Key run evidenc
 
 当前公开 smoke 基线：`public-polish-decomposed-e2e-20260627` 完成 2/2 cases，audit 2/2，expected feature/category match rate 均为 `1.0`，repeat modify 1/1。当前 build smoke `public-build-smoke-clean` 完成 showcase 5/5 pass，doctor 22 pass / 0 warning，development e2e build 2/2，并生成 `progression_mod-0.1.0.jar` 和 `ruby_mod-0.1.0.jar`。这些结果使用 mock provider；build smoke 证明 Gradle 编译层通过，但仍不是 Minecraft runtime 自动验收。
 
+## Real Provider Evidence
+
+公开 smoke 默认使用 mock provider，是为了让 CI 和本地演示稳定复现；真实 provider 路径单独统计，避免把 fallback、provider 错误、schema 错误、audit/build 和 runtime 证据混在一起。
+
+| Evidence | Result | Boundary |
+| --- | --- | --- |
+| Decomposed planner A/B | 5 real-provider generate cases 中，decomposed planner `5/5` strict success、audit `5/5`、fallback `0`；相比 full-schema planner，provider-reported total tokens 从 `254,310` 降到 `5,875`，约降 `97.7%`，平均延迟 `44.7s -> 25.1s` | Full-schema batch 曾有 1 个空输出 case，单独重试后通过，因此按 `5/5*` 记录稳定性边界 |
+| Decomposed 13-case smoke | `12/13` strict real LLM success，audit `12/13`，fallback `0`，total tokens `22,904` | 唯一失败是 `ruby_realm_world_structure`，暴露 dimension / biome / structure / loot 复合世界生成的 planner/schema 覆盖边界 |
+| Build follow-up | 代表性 real-provider generated workspaces 补充 Gradle build smoke，保留 jar 和 build evidence | 这证明 workspace 级 build gate，不等于 Minecraft 客户端/服务端 runtime 验收 |
+
+更多统计口径见 [Real LLM Evidence Summary](docs/Agent与能力/real-llm-evidence-summary.md)。没有显式 manual runtime evidence 的 case 一律不能写成 Minecraft runtime 通过。
+
 ## Evidence And Safety
 
 | Area | How this project handles it |
@@ -96,6 +108,7 @@ workspace/               Local generated workspaces and evidence, not long-term 
 - [Tool Calling Contract](docs/Agent与能力/tool-calling-contract.md)
 - [ModSpec](docs/规格与生成/modspec.md)
 - [Validation And Reliability](docs/验证与可靠性/README.md)
+- [Real LLM Evidence Summary](docs/Agent与能力/real-llm-evidence-summary.md)
 - [Showcase Guide](docs/发布与展示/showcase.md)
 - [Screenshots And Visual Evidence](docs/发布与展示/screenshots.md)
 - [Public Release Checklist](docs/发布与展示/public-release-checklist.md)
