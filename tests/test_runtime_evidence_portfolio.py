@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import sys
 
@@ -17,13 +18,34 @@ from runtime_evidence_portfolio import build_draft, summary, validate
 
 class RuntimeEvidencePortfolioTests(unittest.TestCase):
     def test_draft_is_explicitly_unverified(self) -> None:
-        payload = build_draft(PROJECT_ROOT)
-        self.assertTrue(all(case["status"] == "runtime_unverified" for case in payload["runtime_evidence_cases"]))
-        metrics = summary(payload)
-        self.assertEqual(metrics["checked"], 0)
-        self.assertEqual(metrics["runtime_unverified"], 3)
-        self.assertIsNone(metrics["checked_pass_rate"])
-        self.assertEqual(validate(payload, PROJECT_ROOT), [])
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            definitions = []
+            for index in range(3):
+                workspace = repo / f"workspace-{index}"
+                (workspace / "build" / "libs").mkdir(parents=True)
+                (workspace / ".agent" / "logs").mkdir(parents=True)
+                (workspace / "build" / "libs" / "example.jar").write_bytes(f"jar-{index}".encode())
+                (workspace / ".agent" / "modspec.json").write_text("{}", encoding="utf-8")
+                (workspace / ".agent" / "audit-report.json").write_text("{}", encoding="utf-8")
+                (workspace / ".agent" / "logs" / "gradle-build.json").write_text("{}", encoding="utf-8")
+                definitions.append(
+                    {
+                        "id": f"case-{index}",
+                        "title": f"Case {index}",
+                        "workspace": f"workspace-{index}",
+                        "jar": "build/libs/example.jar",
+                        "checks": (("launch", "Client launches."),),
+                    }
+                )
+            with patch("runtime_evidence_portfolio.CASES", tuple(definitions)):
+                payload = build_draft(repo)
+                self.assertTrue(all(case["status"] == "runtime_unverified" for case in payload["runtime_evidence_cases"]))
+                metrics = summary(payload)
+                self.assertEqual(metrics["checked"], 0)
+                self.assertEqual(metrics["runtime_unverified"], 3)
+                self.assertIsNone(metrics["checked_pass_rate"])
+                self.assertEqual(validate(payload, repo), [])
 
     def test_rejects_status_and_passed_mismatch(self) -> None:
         payload = build_draft(PROJECT_ROOT)
