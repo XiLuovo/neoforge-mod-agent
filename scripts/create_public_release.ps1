@@ -10,6 +10,13 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$portfolioBuilder = Join-Path $repoRoot "scripts\build_portfolio_evidence.py"
+if (Test-Path -LiteralPath $portfolioBuilder) {
+    & py -3.11 $portfolioBuilder --check
+    if ($LASTEXITCODE -ne 0) {
+        throw "Portfolio evidence verification failed. Rebuild it before creating a public release."
+    }
+}
 $outputRootPath = Join-Path $repoRoot $OutputRoot
 $stagePath = Join-Path $outputRootPath $ReleaseName
 $zipPath = Join-Path $outputRootPath "$ReleaseName.zip"
@@ -41,6 +48,7 @@ $excludedPaths = @(
 $includeDirs = @(
     ".github",
     "docs",
+    "evidence",
     "examples",
     "scripts",
     "src",

@@ -40,9 +40,9 @@ $env:PYTHONPATH = (Resolve-Path .\src)
 py -3.11 -m agent.cli showcase --run-name public-build-smoke --llm-provider mock --build --json
 ```
 
-最近一次本地 build smoke `public-build-smoke-clean` 结果：showcase 5/5 pass，doctor 22 pass / 0 warning / 0 fail，development e2e 2/2 success，audit 2/2，Gradle build 2/2，生成 `progression_mod-0.1.0.jar` 和 `ruby_mod-0.1.0.jar`。该结果证明 generated workspace 的 Gradle build gate 通过，仍不等于 Minecraft runtime 自动验收。
+最近一次本地 build smoke `public-build-smoke-clean` 结果：showcase 5 passed / 0 failed / 1 skipped（quality gate 未请求），doctor 22 pass / 0 warning / 0 fail，development e2e 2/2 success，audit 2/2，Gradle build 2/2，生成 `progression_mod-0.1.0.jar` 和 `ruby_mod-0.1.0.jar`。该结果证明 generated workspace 的 Gradle build gate 通过，仍不等于 Minecraft runtime 自动验收。脱敏冻结报告见 [Portfolio Evidence](../../evidence/portfolio/README.md)。
 
-真实 provider 证据建议作为单独一层展示，不和 mock / CI smoke 混写：
+真实 provider 证据建议作为单独一层展示，不和 mock / CI smoke 混写。下表是历史实验记录；对应 decomposed 原始 run 尚未进入公开 evidence 包，在补齐前应标为待复验，不作为公开主指标：
 
 | Evidence | Result | 展示边界 |
 |---|---:|---|

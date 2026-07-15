@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "generated_at_utc": "2026-07-15T00:26:50.108300+00:00",
+  "policy": "This directory contains sanitized snapshots of existing local run reports. It does not upgrade audit/build evidence to Minecraft runtime evidence.",
+  "entries": [
+    {
+      "evidence_id": "mock-development-e2e-20260627",
+      "source_run": "workspace/eval-runs/public-polish-decomposed-e2e-20260627/.agent",
+      "provider": "mock",
+      "validation": [
+        "planner",
+        "generator",
+        "audit"
+      ],
+      "boundary": "Offline reproducible evidence; no Gradle build or Minecraft runtime validation.",
+      "status": "complete",
+      "files": [
+        {
+          "path": "mock-development-e2e-20260627/eval-report.json",
+          "bytes": 10335,
+          "sha256": "0f97fb0e9caf209f0f693598cf495b5dd823fa85ff886fdeccf4d23f54c23725"
+        },
+        {
+          "path": "mock-development-e2e-20260627/eval-report.md",
+          "bytes": 3761,
+          "sha256": "3e223d0078678335f4c0f15039062c49fccd036e556685e14d9a44ccf82f4a8e"
+        }
+      ],
+      "missing_files": []
+    },
+    {
+      "evidence_id": "mock-build-showcase",
+      "source_run": "workspace/showcase-runs/public-build-smoke-clean/.agent",
+      "provider": "mock",
+      "validation": [
+        "doctor",
+        "planner",
+        "generator",
+        "audit",
+        "gradle-build"
+      ],
+      "boundary": "Generated workspaces passed the recorded build gate; no Minecraft runtime validation.",
+      "status": "complete",
+      "files": [
+        {
+          "path": "mock-build-showcase/showcase-report.json",
+          "bytes": 12206,
+          "sha256": "ac467e6e7e36fb0730629cab9c90826b08da42a9bb4fcd6a08fcd714ae848b4e"
+        },
+        {
+          "path": "mock-build-showcase/showcase-report.md",
+          "bytes": 9318,
+          "sha256": "d4796ad3ab8ac239ecea5885ab4dd7de35f291789c3ae5609d072f24a54c0082"
+        }
+      ],
+      "missing_files": []
+    },
+    {
+      "evidence_id": "real-provider-13case-historical",
+      "source_run": "workspace/real-llm-stability-runs/real-llm-13case-runtime-upgrade/.agent",
+      "provider": "real-provider",
+      "validation": [
+        "provider",
+        "schema",
+        "generator",
+        "audit"
+      ],
+      "boundary": "Historical non-decomposed run. It must not be used as evidence for the later decomposed-planner token or latency claims. No Minecraft runtime validation.",
+      "status": "complete",
+      "files": [
+        {
+          "path": "real-provider-13case-historical/real-llm-stability.json",
+          "bytes": 27861,
+          "sha256": "436a339b1b349fa78f286e0a53e3e3a096de4493c664019c147adcbc1236d2f6"
+        },
+        {
+          "path": "real-provider-13case-historical/real-llm-stability.md",
+          "bytes": 3996,
+          "sha256": "1b2d3f38ce33886de6a5c0d8ebe78286cf1ce831a6932078269d8b5a3b298420"
+        }
+      ],
+      "missing_files": []
+    }
+  ]
+}

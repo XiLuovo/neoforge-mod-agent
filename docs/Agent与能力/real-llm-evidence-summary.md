@@ -1,6 +1,6 @@
 # 真实 LLM 证据总览
 
-这页汇总真实 provider 稳定性实验的结论，用于项目说明和展示复盘。原始报告仍保留在 `workspace/real-llm-stability-runs`，本页只做结论整理，不替代原始 JSON。
+这页汇总真实 provider 稳定性实验的结论，用于项目说明和展示复盘。当前 checkout 中没有 `decomposed-planner-5case-ab` 与 `decomposed-real-llm-13case-smoke` 的原始 run；相关数字属于历史实验记录，在补充脱敏原始报告前标为待复验。现有可公开核对的旧 run 见 `evidence/portfolio/real-provider-13case-historical/`，它不是 decomposed planner 证据。
 
 ## 一句话结论
 
@@ -219,7 +219,7 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 
 可以这样讲：
 
-> mock 用来证明工程链路可复现；真实 provider 单独跑了最新 13 个 case，统计 provider、schema、audit、build、runtime、fallback 各类结果。最新一轮 `12/13` strict real LLM success，唯一失败是复杂世界/结构 prompt 的 schema failure，provider、audit、fallback failure 都是 `0`。这轮没有 runtime evidence，所以 `13/13` 是 runtime unverified，不能表述成游戏内验证通过。随后保留了 3 个 build follow-up case，依赖重试后 3 个 strict generated projects 都能 Gradle build 成功。再加上本地 unittest 最近一次完整回归 193/193 通过，可以区分模型失败、结构化输出失败、审计失败、构建失败、runtime 未验证、外部环境失败和工程回归质量。
+> mock 用来证明工程链路可复现；真实 provider 证据必须绑定具体 run ID、模型、planner、token 统计和 build/runtime 状态。当前公开包保留了一轮历史 non-decomposed 13-case 报告；decomposed 13-case 和 5-case A/B 的原始报告仍待补齐。完整回归是否通过以当前 CI 或本轮测试输出为准，不在长期文档中固定测试数量。
 
 ## 公开摘要
 
@@ -229,7 +229,7 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 
 中文公开摘要可写成：
 
-> 完成最新 13 case real provider 稳定性验证：12/13 strict real LLM success，唯一失败归类为 schema failure；provider/audit/fallback failure 均为 0，并将缺失 runtime evidence 的 case 单独记为 runtime unverified；额外 build follow-up 中依赖重试后 3/3 strict generated projects 可 Gradle build，本地 unittest 最近一次完整回归 193/193 通过。
+> 真实 provider 稳定性结果应按 run 单独陈述：不要把 decomposed 13-case、历史 non-decomposed 13-case 和独立 build follow-up 合并成一次运行。完整回归结果以当前 CI 或命令输出为准。
 
 ## 没有声称的部分
 
