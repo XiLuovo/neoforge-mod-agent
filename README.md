@@ -1,26 +1,51 @@
 # NeoForge Mod Agent
 
-NeoForge Mod Agent 是一个面向 Minecraft NeoForge Mod 开发的受控 Coding Agent。它把自然语言需求转成 `ModSpec`，再由确定性生成器产出 Java、JSON、资源文件和 `.agent` 证据，而不是让 LLM 自由修改整个工程。
+NeoForge Mod Agent 是一个面向 `minecraft.neoforge` 的领域受控 Coding Agent。它先把自然语言需求约束为 `ModSpec`，再由确定性生成器产出 Java、JSON 和资源文件；LLM 只参与规划、工具选择与结构化修复，不能绕过 audit / Gradle build gate。
 
-项目重点不是“聊天式生成代码”，而是一个可检查、可修复、可回放的领域工程闭环：
+项目关注的是生成过程可检查、失败后可修复、结果可复验，而不是让模型自由修改整个工程。
 
 ```text
 Natural language
--> ModSpec planner
--> deterministic NeoForge generator
--> controlled tool-calling repair/refine loop
--> reviewer + audit/build gate
--> trace-backed benchmark and .agent evidence
+→ ModSpec-first planner
+→ deterministic NeoForge generator
+→ controlled tools + structured patch
+→ audit / Gradle build gate
+→ trace-backed, replayable evidence
 ```
 
-## What It Does
+## Verified Evidence Snapshot
 
-- 从自然语言生成 NeoForge 26.1 mod workspace。
-- 支持 item、block、ore/worldgen、recipe、machine、entity、progression、quest guide、resource/texture 等结构化能力。
-- 用 `ModSpec` 和 DSL 限制 LLM 输出边界，Java / JSON / PNG 由生成器落地。
-- 通过受控工具循环读取文件、检索本地 NeoForge 知识、应用结构化 patch、运行 audit/build。
-- 为每次运行写出 `.agent/` 证据：planner trace、tool-call trace、RAG citation、reviewer report、audit report、patch report 和 rollback evidence。
-- 用 benchmark / RAG ablation / repair suite 评估生成、修复和可靠性。
+| 验证层 | 已公开结果 | 严格边界 |
+| --- | --- | --- |
+| Offline development E2E | mock + decomposed planner：2/2 success，audit 2/2，repeat modify 1/1 | 证明离线工程链路可复现，不证明真实 provider |
+| Build showcase | 5 passed / 0 failed / 1 skipped（quality gate 未请求）；development E2E Gradle build 2/2 | 证明 generated workspace 可编译，不证明游戏内行为 |
+| Manual Minecraft runtime | 3/3 checked，2 passed / 1 failed，0 unverified | 证明实际进入 NeoForge 客户端检查；失败项完整保留 |
+
+- 脱敏冻结的 eval/build/real-provider 报告：[Portfolio Evidence](evidence/portfolio/README.md)
+- Runtime checklist、JAR/截图 SHA-256 和逐项结果：[Minecraft Runtime Evidence](evidence/runtime/README.md)
+
+部分历史 decomposed real-provider 指标目前缺少对应原始 run，因此不计入上表中的可复验主结果；详细边界见 [Real LLM Evidence Summary](docs/Agent与能力/real-llm-evidence-summary.md)。
+
+## Minecraft Runtime Evidence
+
+| Passed: Speed Crystal behavior | Failed case 中已通过的自然 worldgen 子项 |
+| --- | --- |
+| ![Speed Crystal applies Speed II](evidence/runtime/attachments/runtime_speed_crystal_behavior/speed-ii-effect.png) | ![Natural Ruby Ore at Y 8](evidence/runtime/attachments/runtime_modify_worldgen/natural-ruby-ore-f3.png) |
+| Speed Crystal 在 NeoForge 客户端中触发 Speed II；截图时剩余 6 秒，物品仍保留在快捷栏。 | 在新生成区域的 `Y≈8` 观察到自然 Ruby Ore，位于配置区间 `-64..32`；但同一 case 的 `/place feature ruby_mod:ruby_ore` 失败，因此整体仍严格记为 failed。 |
+
+第三个 runtime case 很重要：内容注册、方块渲染、双向配方和自然矿石观察均通过，但 placed-feature 命令失败，且挖掘掉落没有直接验证。它说明 audit/build 通过不等于 Minecraft runtime 全部行为正确，也证明 runtime gate 会保留失败而不是把结果包装成全绿。
+
+基础 Ruby 物品的客户端注册与自定义纹理证据：[held-ruby.png](evidence/runtime/attachments/runtime_basic_ruby/held-ruby.png)。
+
+## Core Capabilities
+
+- **ModSpec-first generation**：自然语言先进入领域规格；item、block、ore/worldgen、recipe、machine、entity、progression、quest guide 和资源能力由确定性 generator 落地。
+- **Controlled repair/refine**：LLM 只能调用检索、文件读取、结构化 patch、audit 和 build 等受控工具，不能输出无边界 diff。
+- **Safe patch execution**：workspace 路径策略、patch 前 snapshot、失败 rollback、structured patch report 和残余风险记录共同限制写入范围。
+- **Evidence-backed validation**：每次运行可以产生 planner、prompt、tool-call、RAG citation、reviewer、audit/build、patch 和 replay evidence。
+- **Reliability evaluation**：eval、repair suite、RAG ablation、benchmark 和 runtime evidence 分层记录成功、失败与验证边界。
+
+完整领域能力见 [ModSpec](docs/规格与生成/modspec.md) 和 [Capabilities](docs/总览/capabilities.md)。
 
 ## Quick Start
 
@@ -29,75 +54,58 @@ PowerShell：
 ```powershell
 $env:PYTHONPATH = (Resolve-Path .\src)
 
-# Check local environment
+# Check the local environment
 py -3.11 -m agent.cli doctor --no-java --json
 
-# Run the current offline development e2e smoke with mock LLM and no Gradle build
-py -3.11 -m agent.cli eval --cases examples/agent_development_e2e.json --planner decomposed --llm-provider mock --audit --no-build --run-name public-smoke-decomposed-e2e --json
+# Reproducible offline development E2E
+py -3.11 -m agent.cli eval `
+  --cases examples/agent_development_e2e.json `
+  --planner decomposed `
+  --llm-provider mock `
+  --audit `
+  --no-build `
+  --json
 
-# Run the broader offline showcase flow
-py -3.11 -m agent.cli showcase --run-name development-e2e-smoke --llm-provider mock --no-build --json
-
-# Optional stricter smoke: run Gradle build for generated workspaces
-py -3.11 -m agent.cli showcase --run-name public-build-smoke --llm-provider mock --build --json
-
-# Run the test suite
+# Run regression tests
 py -3.11 -m unittest discover -s tests -v
 ```
 
-`--no-build` 适合快速演示；需要 Gradle 编译证据时改用 `--build`。如果使用真实 LLM provider，请配置 `NEOFORGE_AGENT_LLM_*` 或 OpenAI-compatible 环境变量，并用 `--require-llm` / `--require-real` 区分真实 provider 成功和 fallback 成功。
-
-## Example Workflows
+需要 Gradle 编译证据时运行：
 
 ```powershell
-# Development e2e eval: generate + modify + audit + trace evidence
-py -3.11 -m agent.cli eval --cases examples/agent_development_e2e.json --planner decomposed --llm-provider mock --audit --no-build --json
-
-# Build smoke: generate/modify/e2e showcase with Gradle build enabled
-py -3.11 -m agent.cli showcase --run-name public-build-smoke --llm-provider mock --build --json
-
-# Agent benchmark with RAG on/off ablation
-py -3.11 -m agent.cli agent bench --suite examples/agentic_rag_ablation.json --llm-provider mock --rag-ablation --audit --no-build --json
+py -3.11 -m agent.cli showcase `
+  --run-name public-build-smoke `
+  --llm-provider mock `
+  --build `
+  --json
 ```
 
-Generated workspaces and reports are written under `workspace/`. Key run evidence lives in `.agent/` folders.
+`--no-build` 只证明 audit-level 流程；`--build` 证明 workspace 可编译；只有显式 runtime evidence 才能证明实际进入 Minecraft 检查。真实 provider 运行还应使用 `--require-llm` / `--require-real`，避免把 fallback 成功计入模型成功。
 
-当前公开 smoke 基线：`public-polish-decomposed-e2e-20260627` 完成 2/2 cases，audit 2/2，expected feature/category match rate 均为 `1.0`，repeat modify 1/1。当前 build smoke `public-build-smoke-clean` 记录为 5 passed / 0 failed / 1 skipped（quality gate 未请求），doctor 22 pass / 0 warning，development e2e build 2/2，并生成 `progression_mod-0.1.0.jar` 和 `ruby_mod-0.1.0.jar`。这些结果使用 mock provider；build smoke 证明 Gradle 编译层通过，但仍不是 Minecraft runtime 自动验收。脱敏冻结报告、来源 run 和 SHA-256 见 [Portfolio Evidence](evidence/portfolio/README.md)。
+更多 develop、repair、benchmark 和 RAG ablation 命令见 [Showcase Guide](docs/发布与展示/showcase.md)。
 
-## Real Provider Evidence
+## Component Responsibilities
 
-公开 smoke 默认使用 mock provider，是为了让 CI 和本地演示稳定复现；真实 provider 路径单独统计，避免把 fallback、provider 错误、schema 错误、audit/build 和 runtime 证据混在一起。
-
-下列 decomposed planner 数据来自历史本地实验记录；对应原始 run 当前尚未进入公开 evidence 包，因此只能作为待复验结果，不能作为仓库内可独立复现的主指标。公开包中的 `real-provider-13case-historical` 是另一轮 non-decomposed run，不能替代下表证据。
-
-| Evidence | Recorded result | Boundary |
+| Component | 可以做什么 | 不能替代什么 |
 | --- | --- | --- |
-| Decomposed planner A/B | 5 real-provider generate cases 中，decomposed planner `5/5` strict success、audit `5/5`、fallback `0`；相比 full-schema planner，provider-reported total tokens 从 `254,310` 降到 `5,875`，约降 `97.7%`，平均延迟 `44.7s -> 25.1s` | Full-schema batch 曾有 1 个空输出 case，单独重试后通过，因此按 `5/5*` 记录稳定性边界 |
-| Decomposed 13-case smoke | `12/13` strict real LLM success，audit `12/13`，fallback `0`，total tokens `22,904` | 唯一失败是 `ruby_realm_world_structure`，暴露 dimension / biome / structure / loot 复合世界生成的 planner/schema 覆盖边界 |
-| Build follow-up | 代表性 real-provider generated workspaces 补充 Gradle build smoke，保留 jar 和 build evidence | 这证明 workspace 级 build gate，不等于 Minecraft 客户端/服务端 runtime 验收 |
+| LLM planner | 把自然语言整理为 feature plan / `ModSpec` | 不能直接自由修改项目源码 |
+| LLM tool loop | 选择受控读取、检索、patch、audit/build action | 不能绕过路径策略或提交任意 diff |
+| Deterministic generator | 根据 `ModSpec` 生成 Java、JSON、resources 和 PNG | 不负责猜测开放式需求 |
+| Structured patch executor | 校验路径、snapshot、应用 patch、记录 rollback | 不能写到 generated workspace 的允许范围之外 |
+| LLM reviewer | 审查需求覆盖、风险和 evidence sufficiency | 不能把 audit/build failure 改成 success |
+| Audit / Gradle build | 提供确定性的 workspace 结构与编译 gate | 不等于 Minecraft 客户端/服务端 runtime 验收 |
+| Manual runtime evidence | 记录实际游戏内检查、截图和失败现象 | 不自动代表所有 Mod 行为均已覆盖 |
 
-更多统计口径见 [Real LLM Evidence Summary](docs/Agent与能力/real-llm-evidence-summary.md)。没有显式 manual runtime evidence 的 case 一律不能写成 Minecraft runtime 通过。
-
-当前包版本是 `8.5.0`；文档中的 RC1/RC2/RC3 表示作品集能力阶段，不是独立的 Python package version。
-
-## Minecraft Runtime Evidence
-
-首批人工 Minecraft / NeoForge runtime 验收覆盖 3 个 generated workspace，当前结果为 `3/3 checked`、`2 passed`、`1 failed`、`0 unverified`。通过案例包括最小 Ruby Mod 启动/物品渲染，以及 Speed Crystal 在游戏内触发 Speed II 且不消耗物品。modify/worldgen 案例确认了内容注册、方块渲染、双向配方和自然矿脉生成，但 `/place feature ruby_mod:ruby_ore` 命令失败，因此整例按严格口径记为 failed。
-
-结构化记录、JAR SHA-256、逐项检查结果和截图附件见 [Minecraft Runtime Evidence](evidence/runtime/README.md)。这组结果说明 runtime gate 能发现 audit/build 未覆盖的行为差异，不应改写为“3/3 全部通过”。
+核心原则是：LLM 提供受约束的决策，确定性代码负责生成、执行边界和最终工程门禁。
 
 ## Evidence And Safety
 
-| Area | How this project handles it |
-| --- | --- |
-| LLM planning | LLM output is constrained to `ModSpec`, structured patch intent, or tool actions. |
-| Code generation | Java, JSON, resources, recipes, loot tables, tags, and textures are generated deterministically. |
-| Repair/refine | The agent uses controlled tools such as RAG retrieval, file read/search, structured patch, audit, and build. |
-| Review | LLM reviewer checks coverage, risk, and evidence sufficiency, but cannot override audit/build gates. |
-| Evidence | `.agent/` stores run traces, prompt traces, tool-call traces, reviewer reports, audit/build reports, patch reports, and rollback evidence. |
-| Benchmarks | `agent bench` records real agent traces and can compare RAG on/off behavior. |
-
-Important boundary: audit/build proves workspace-level correctness. It is not the same as Minecraft client/server runtime validation unless explicit manual runtime evidence is attached.
+- `.agent/` 保存 planner、prompt、tool-call、RAG、reviewer、audit/build、patch 和 rollback evidence。
+- `workspace/` 是 generated artifacts 和本地 evidence 区，不作为长期源码资产。
+- `evidence/portfolio/` 保存经过脱敏和 SHA-256 校验的公开冻结报告。
+- `evidence/runtime/` 保存人工 Minecraft runtime checklist、被测 JAR hash 和截图附件。
+- Mock、real provider、fallback、audit、build 和 runtime 结果分层统计，不相互冒充。
+- Direct Code Lane 是实验性受控通道，不能绕过 ModSpec、structured patch 和 gate。
 
 ## Repository Layout
 
@@ -106,9 +114,11 @@ src/neoforge_agent/      Agent runtime, planner, generator, auditor, repair, ben
 src/agent/               CLI compatibility entrypoint
 examples/                ModSpec examples, eval suites, repair/RAG benchmark cases
 templates/neoforge-26.1/ NeoForge workspace template
-tests/                   Unit and regression tests
-docs/                    Architecture, agent workflow, generation specs, validation, showcase docs
-workspace/               Local generated workspaces and evidence, not long-term source assets
+tests/                   Unit, regression, safety and evidence tests
+docs/                    Architecture, contracts, validation and showcase documentation
+evidence/portfolio/      Sanitized frozen eval/build/provider reports
+evidence/runtime/        Manual Minecraft runtime evidence and screenshots
+workspace/               Local generated workspaces; not a long-term source directory
 ```
 
 ## Documentation
@@ -118,14 +128,14 @@ workspace/               Local generated workspaces and evidence, not long-term 
 - [Tool Calling Contract](docs/Agent与能力/tool-calling-contract.md)
 - [ModSpec](docs/规格与生成/modspec.md)
 - [Validation And Reliability](docs/验证与可靠性/README.md)
-- [Real LLM Evidence Summary](docs/Agent与能力/real-llm-evidence-summary.md)
+- [Runtime Manual Validation](docs/验证与可靠性/runtime-manual-validation.md)
 - [Showcase Guide](docs/发布与展示/showcase.md)
-- [Screenshots And Visual Evidence](docs/发布与展示/screenshots.md)
 - [Public Release Checklist](docs/发布与展示/public-release-checklist.md)
 
 ## Project Boundaries
 
-- This is a `minecraft.neoforge` controlled Coding Agent, not a generic unrestricted coding agent.
-- RAG is context and citation evidence for planning/repair/review; it is not the main product.
-- Direct Code Lane is experimental opt-in and must not bypass ModSpec, structured patch, audit/build, or evidence gates.
-- Claims in README, reports, or demos must match the evidence actually generated.
+- 稳定 domain 只有 `minecraft.neoforge`，不是通用无限制 Coding Agent。
+- RAG 是 planner / repair / reviewer 的上下文和 citation evidence，不是项目主线。
+- Reviewer 只能做覆盖、风险和证据审查，不能替代 audit/build gate。
+- Build 通过只证明 workspace 可编译，不自动证明游戏内交互、平衡性、AI 行为或玩家体验。
+- 所有公开结论必须能够由测试、report、trace、build log 或 runtime evidence 支撑。

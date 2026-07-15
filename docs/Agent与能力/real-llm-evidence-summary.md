@@ -233,4 +233,4 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 
 ## 没有声称的部分
 
-当前证据不声称已经完成 Minecraft 客户端内的人工游玩验证，也不声称所有 future prompts 都能成功。最新 13 case 明确有 1 个 schema failure，并且没有 runtime evidence 的 case 均记为 runtime unverified。它证明的是：在这批可复现 case 上，真实 provider 输出、schema 约束、生成器、audit gate、Gradle build follow-up 和 runtime 证据边界可以被分层统计和解释。
+本页汇总的上述 real-provider runs 没有附带 Minecraft 客户端人工 runtime evidence，也不声称所有 future prompts 都能成功。对应 13-case run 明确有 1 个 schema failure，且该 run 中没有 runtime evidence 的 case 均记为 runtime unverified。仓库后来补充的独立人工 runtime 验收见 `evidence/runtime/`，不能反向改写这些历史 provider runs 的验证状态。

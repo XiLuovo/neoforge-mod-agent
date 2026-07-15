@@ -20,7 +20,7 @@ Natural language
 2. 单独运行 `eval --cases examples/agent_development_e2e.json`，展示自然语言如何进入 ModSpec，再由 generator 产出 workspace，并通过 audit gate 和 trace/report 验收。
 3. 打开 eval report，重点看 `expected_feature_match_rate`、`expected_category_match_rate`、`audit_success_rate`、`repeat_modify_success_rate`。
 4. 如需可靠性补充，再展示 3-case RAG ablation smoke、18-case repair suite 或 seeded holdout。
-5. 明确边界：本轮默认证明 workspace audit/build 层，不声称 Minecraft runtime 自动验收。
+5. 明确边界：CLI showcase 默认只证明 workspace audit/build 层；人工 Minecraft runtime evidence 作为独立验证层记录，不能由 showcase 自动推导。
 
 ## 推荐命令
 
