@@ -1,0 +1,260 @@
+{
+  "schema_version": "manual-runtime-evidence/v1",
+  "evidence_kind": "manual_minecraft_runtime",
+  "generated_at_utc": "2026-07-15T00:44:43.800147+00:00",
+  "runtime_evidence_cases": [
+    {
+      "schema_version": "manual-runtime-evidence/v1",
+      "evidence_kind": "manual_minecraft_runtime",
+      "id": "runtime_basic_ruby",
+      "title": "Basic Ruby startup smoke",
+      "workspace": "workspace/runtime-real-basic-ruby",
+      "status": "passed",
+      "passed": true,
+      "source": "evidence/runtime/runtime-evidence.json",
+      "notes": "NeoForge client entered a world successfully. The Ruby Mod creative tab and Ruby item were visible; the item had a readable name, a non-missing texture, and rendered correctly while held.",
+      "tested_at": "2026-07-15T08:54:53+08:00",
+      "environment": {
+        "side": "client",
+        "minecraft": "26.1.2",
+        "neoforge": "26.1.2.30-beta",
+        "java": "25"
+      },
+      "artifact": {
+        "jar": "build/libs/ruby_mod-0.1.0.jar",
+        "sha256": "ac8c2b28a53866405c891bd63e9a30ed84b52a2abdd600af7b729123994b813a"
+      },
+      "provenance": {
+        "modspec": ".agent/modspec.json",
+        "modspec_sha256": "00cc8424b7be630ee5bd7036e14e8cf7f6440b67d1b948fa936ef21cfc988ca3",
+        "audit": ".agent/audit-report.json",
+        "build": ".agent/logs/gradle-build.json",
+        "missing": []
+      },
+      "checks": [
+        {
+          "id": "client_launch",
+          "status": "passed",
+          "expected": "NeoForge client reaches the main menu without a mod initialization crash.",
+          "observed": "Screenshot shows the NeoForge 26.1.2 client inside a loaded single-player world."
+        },
+        {
+          "id": "mod_loaded",
+          "status": "passed",
+          "expected": "Ruby Mod appears in the loaded mods list.",
+          "observed": "Ruby Mod creative inventory tab is visible and contains the Ruby item."
+        },
+        {
+          "id": "item_registered",
+          "status": "passed",
+          "expected": "Command /give @s ruby_mod:ruby succeeds.",
+          "observed": "Ruby item is present in the creative inventory and player hotbar."
+        },
+        {
+          "id": "item_visual",
+          "status": "passed",
+          "expected": "Ruby has the expected name and a visible, non-missing texture.",
+          "observed": "Ruby displays its name and renders with a custom red texture in inventory and first person."
+        }
+      ],
+      "attachments": [
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_basic_ruby/creative-tab-ruby.png",
+          "sha256": "a6347a596107c9132a368951389d7caa0ee7635543783cde5cc53a3e96d9a10b"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_basic_ruby/held-ruby.png",
+          "sha256": "fd781eeb9493bab58458d2f1c4c2e56cd4898a49158125ae38254ca1f736a879"
+        }
+      ]
+    },
+    {
+      "schema_version": "manual-runtime-evidence/v1",
+      "evidence_kind": "manual_minecraft_runtime",
+      "id": "runtime_speed_crystal_behavior",
+      "title": "Speed Crystal behavior",
+      "workspace": "workspace/real-llm-stability-runs/real-llm-build-3case-20260604-223533/runs/03-speed_crystal_behavior-strict",
+      "status": "passed",
+      "passed": true,
+      "source": "evidence/runtime/runtime-evidence.json",
+      "notes": "Speed Crystal rendered correctly, applied Speed II at runtime, and remained in the inventory after use. The captured effect timer showed 6 seconds remaining, consistent with the expected approximately 10-second duration after interaction and screenshot delay.",
+      "tested_at": "2026-07-15T08:58:47+08:00",
+      "environment": {
+        "side": "client",
+        "minecraft": "26.1.2",
+        "neoforge": "26.1.2.30-beta",
+        "java": "25"
+      },
+      "artifact": {
+        "jar": "build/libs/example_mod-1.0.0.jar",
+        "sha256": "eac5a5a8fc63aece1daf885202b7f12836fae26f8c33a27a39a38b6bf877ee8d"
+      },
+      "provenance": {
+        "modspec": ".agent/modspec.json",
+        "modspec_sha256": "35f51f450b3ffec0d93a81c7ebf5905c250d8d7c3c6ba42bec26c058ded5843c",
+        "audit": ".agent/audit-report.json",
+        "build": ".agent/logs/gradle-build.json",
+        "missing": []
+      },
+      "checks": [
+        {
+          "id": "client_launch",
+          "status": "passed",
+          "expected": "NeoForge client reaches a world without a mod initialization crash.",
+          "observed": "Screenshots show the NeoForge 26.1.2 client inside a loaded single-player world."
+        },
+        {
+          "id": "item_registered",
+          "status": "passed",
+          "expected": "Command /give @s example_mod:speed_crystal succeeds.",
+          "observed": "Speed Crystal is visible in the Example Mod creative tab and player hotbar."
+        },
+        {
+          "id": "effect_applied",
+          "status": "passed",
+          "expected": "Using the crystal applies Speed II for approximately 10 seconds.",
+          "observed": "Inventory effect panel shows Speed II with 00:06 remaining after use."
+        },
+        {
+          "id": "item_not_consumed",
+          "status": "passed",
+          "expected": "The crystal remains in the inventory after use.",
+          "observed": "The crystal remains in the hotbar while Speed II is active."
+        }
+      ],
+      "attachments": [
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_speed_crystal_behavior/creative-tab-speed-crystal.png",
+          "sha256": "5eafd7ed9b9aee62e804fcc47154b32e602c3be15b672bb972a336927c783f6e"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_speed_crystal_behavior/held-speed-crystal.png",
+          "sha256": "d5aa9a165829889300589f759c520ebb2b3eb73978fc2282d6208807b64f83b5"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_speed_crystal_behavior/speed-ii-effect.png",
+          "sha256": "e925b0509ab8c7e3217a1edc851588fdcd5a8346ceb42ec1dfe89c743e7d791b"
+        }
+      ]
+    },
+    {
+      "schema_version": "manual-runtime-evidence/v1",
+      "evidence_kind": "manual_minecraft_runtime",
+      "id": "runtime_modify_worldgen",
+      "title": "Modify lane resources, recipes, and worldgen",
+      "workspace": "workspace/showcase-runs/public-build-smoke-clean/workspaces/eval-runs/public-build-smoke-clean-development-e2e/02-modify_add_worldgen_repeat-base",
+      "status": "failed",
+      "passed": false,
+      "source": "evidence/runtime/runtime-evidence.json",
+      "notes": "Client launch, content registration, block placement, both Ruby block recipes, and natural ore worldgen were observed. The command /place feature ruby_mod:ruby_ore failed, and mining/drop behavior was not directly captured; the case is therefore not recorded as passed.",
+      "tested_at": "2026-07-15T09:11:55+08:00",
+      "environment": {
+        "side": "client",
+        "minecraft": "26.1.2",
+        "neoforge": "26.1.2.30-beta",
+        "java": "25"
+      },
+      "artifact": {
+        "jar": "build/libs/ruby_mod-0.1.0.jar",
+        "sha256": "2c4e0857dee04dd97a2bae7f0e7a8112d5689b7ac9f74849cbb897d252e91c4b"
+      },
+      "provenance": {
+        "modspec": ".agent/modspec.json",
+        "modspec_sha256": "0c112eeb82f7517d36c59a19342a95aff14e0f44eea9a94e54643f0cfc75b01a",
+        "audit": ".agent/audit-report.json",
+        "build": ".agent/logs/gradle-build.json",
+        "missing": []
+      },
+      "checks": [
+        {
+          "id": "client_launch",
+          "status": "passed",
+          "expected": "NeoForge client reaches a newly created world without a mod initialization crash.",
+          "observed": "NeoForge client entered a single-player world without a mod initialization crash."
+        },
+        {
+          "id": "content_registered",
+          "status": "passed",
+          "expected": "Ruby item, block, ore, apple, and sword are available.",
+          "observed": "Creative tab screenshots show Ruby Block, Ruby Ore, Ruby, Ruby Apple, and Ruby Sword."
+        },
+        {
+          "id": "block_interaction",
+          "status": "not_checked",
+          "expected": "Ruby block and ore can be placed and mined with expected drops.",
+          "observed": "Ruby Block and Ruby Ore were placed and rendered correctly; mining and drop behavior were not directly checked."
+        },
+        {
+          "id": "recipes",
+          "status": "passed",
+          "expected": "Ruby block compression and decompression recipes work.",
+          "observed": "Screenshots show 1 Ruby Block producing 9 Ruby and 9 Ruby producing 1 Ruby Block."
+        },
+        {
+          "id": "placed_feature",
+          "status": "failed",
+          "expected": "Command /place feature ruby_mod:ruby_ore succeeds.",
+          "observed": "User reported that /place feature ruby_mod:ruby_ore failed."
+        },
+        {
+          "id": "natural_worldgen",
+          "status": "passed",
+          "expected": "A natural ruby ore vein is observed in a newly generated chunk between Y -64 and 32.",
+          "observed": "A natural Ruby Ore vein was observed underground; F3 evidence records Y=8.65863, within the configured -64..32 range."
+        }
+      ],
+      "attachments": [
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_modify_worldgen/creative-tab-apple.png",
+          "sha256": "abed5a8b5df343aaf2e484a37db62ff80752ca12845cc8ed3259d137b9c7badf"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_modify_worldgen/creative-tab-sword.png",
+          "sha256": "37019cce44b0baf3ad278bf4218185b68b1d9b0762922e5a1e5b0e0b3abf9827"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_modify_worldgen/placed-ruby-block.png",
+          "sha256": "a5c7a52c798fc6250eba2a3497da7c78b4001e89b8fa0de848091c134a89dab6"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_modify_worldgen/placed-ruby-ore.png",
+          "sha256": "0afdb7c0cbb6da2b49a05b7fdabe6dcce20acd595ae4abf2066038de62f6aa97"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_modify_worldgen/natural-ore-context.png",
+          "sha256": "2421c411ae5a8499a375b1732e533b19618ba7e1d969551c40b587f48c2cdaeb"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_modify_worldgen/natural-ruby-ore.png",
+          "sha256": "9d1e8ed80cd27291cb5594695f600e6230749924146dc580dff3df7c1e2d4a45"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_modify_worldgen/natural-ruby-ore-f3.png",
+          "sha256": "01bebbf51a20a5b7568299e1283dc0a29d8a923515b0070f755b8cab61fd117f"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_modify_worldgen/recipe-block-to-ruby.png",
+          "sha256": "deea41ba9a66b8cf5b635877df8eaafe7d5438189b4d70734fa7effef7c289e6"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_modify_worldgen/recipe-ruby-to-block.png",
+          "sha256": "725dd3f7ec8f6d38c63a6e61e50e428c3b564b4b4fa94194dbae5d58aef8e886"
+        }
+      ]
+    }
+  ]
+}

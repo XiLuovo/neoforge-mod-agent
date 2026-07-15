@@ -133,6 +133,8 @@ workspace/evidence-chain-runs/<run-id>/.agent/evidence-chain-report.md
 
 这条路线的价值是把自动 gate 和人工 runtime 验证分开说清楚：build 证明 jar 可编译，runtime evidence 才能支撑“进游戏检查过”的结论。
 
+当前首批人工 runtime evidence 位于 `evidence/runtime/`：3 个 case 已全部检查，其中 2 个 passed、1 个 failed。失败案例不是启动失败，而是 modify/worldgen workspace 中 `/place feature ruby_mod:ruby_ore` 命令失败；该案例的自然矿脉、内容注册和配方仍有截图证据。公开展示时应同时保留成功与失败结果，用来说明 runtime gate 补充了 audit/build 的覆盖边界。
+
 ## Repair / RAG 补充
 
 RAG/repair benchmark 是可靠性补充，不是项目主线。

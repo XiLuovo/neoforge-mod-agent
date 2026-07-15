@@ -80,6 +80,12 @@ Generated workspaces and reports are written under `workspace/`. Key run evidenc
 
 当前包版本是 `8.5.0`；文档中的 RC1/RC2/RC3 表示作品集能力阶段，不是独立的 Python package version。
 
+## Minecraft Runtime Evidence
+
+首批人工 Minecraft / NeoForge runtime 验收覆盖 3 个 generated workspace，当前结果为 `3/3 checked`、`2 passed`、`1 failed`、`0 unverified`。通过案例包括最小 Ruby Mod 启动/物品渲染，以及 Speed Crystal 在游戏内触发 Speed II 且不消耗物品。modify/worldgen 案例确认了内容注册、方块渲染、双向配方和自然矿脉生成，但 `/place feature ruby_mod:ruby_ore` 命令失败，因此整例按严格口径记为 failed。
+
+结构化记录、JAR SHA-256、逐项检查结果和截图附件见 [Minecraft Runtime Evidence](evidence/runtime/README.md)。这组结果说明 runtime gate 能发现 audit/build 未覆盖的行为差异，不应改写为“3/3 全部通过”。
+
 ## Evidence And Safety
 
 | Area | How this project handles it |

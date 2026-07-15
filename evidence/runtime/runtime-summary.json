@@ -1,0 +1,11 @@
+{
+  "planned": 3,
+  "checked": 3,
+  "passed": 2,
+  "failed": 1,
+  "blocked": 0,
+  "runtime_unverified": 0,
+  "verification_coverage": 1.0,
+  "checked_pass_rate": 0.6666666666666666,
+  "boundary": "Only explicitly checked cases count as Minecraft runtime evidence."
+}
