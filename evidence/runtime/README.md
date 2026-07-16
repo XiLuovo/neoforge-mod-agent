@@ -2,13 +2,13 @@
 
 这里保存人工 Minecraft runtime 验收的源记录。所有 case 初始都是 `runtime_unverified`；只有实际启动对应 workspace、完成 checklist、记录观察结果并附上截图或日志后，才能改为 `passed` 或 `failed`。
 
-当前首批结果：`3/3 checked`、`2 passed`、`1 failed`、`0 unverified`。第三例因 `/place feature ruby_mod:ruby_ore` 失败按严格口径记为 failed；同一例的自然 worldgen、内容注册、方块渲染和双向配方已通过。
+当前首批结果：`3/3 checked`、`3 passed`、`0 failed / blocked / unverified`。第三例保留了首次 `/place feature ruby_mod:ruby_ore` 失败记录；诊断确认执行位置缺少可替换 Stone，随后在实心 Stone 环境中复验成功，并补齐了生存模式挖掘与掉落证据。
 
 ## 当前候选
 
 1. `runtime_basic_ruby`：最小客户端启动、Mod 加载和 Ruby 物品注册。
 2. `runtime_speed_crystal_behavior`：右键触发 Speed II 约 10 秒，并确认物品不消耗。
-3. `runtime_modify_worldgen`：modify lane 生成的物品、方块、配方和自然矿脉已观察；placed-feature 命令失败，整体状态为 failed。
+3. `runtime_modify_worldgen`：modify lane 生成的物品、方块、双向配方、自然矿脉、configured feature 放置和挖掘掉落均已检查；首次失败尝试与复验记录同时保留。
 
 暂不把 `progression_mod` 作为首批通过目标：当前静态检查发现 compressor 没有产出流程，structure template pool 也没有可见结构元素。它更适合作为后续 runtime failure → repair 的案例。
 

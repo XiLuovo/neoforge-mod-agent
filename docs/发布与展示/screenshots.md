@@ -16,7 +16,7 @@
 
 ## 现有资产
 
-`evidence/runtime/attachments/` 当前保存 3 个人工 runtime case 的截图：Basic Ruby 和 Speed Crystal 为 passed，modify/worldgen case 因 `/place feature ruby_mod:ruby_ore` 失败而整体记为 failed。展示自然 Ruby Ore 截图时必须同时说明这个整体状态，不能把局部通过扩大为 worldgen 全链路通过。
+`evidence/runtime/attachments/` 当前保存 3 个人工 runtime case 的截图，三例均已完成并通过。modify/worldgen case 还保留了首次 `/place feature ruby_mod:ruby_ore` 失败与 Stone-volume 成功复验：展示时必须说明失败来自测试前置条件，而不是删除失败记录或误写成 generator 修复。
 
 `docs/assets/` 中的旧 dashboard 或 benchmark 图片可作为历史展示素材，但不要把它们当作当前主证据。当前主证据以公开冻结 report、`.agent` trace、runtime checklist 和带 hash 的截图附件为准。
 

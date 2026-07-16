@@ -148,11 +148,13 @@
       "id": "runtime_modify_worldgen",
       "title": "Modify lane resources, recipes, and worldgen",
       "workspace": "workspace/showcase-runs/public-build-smoke-clean/workspaces/eval-runs/public-build-smoke-clean-development-e2e/02-modify_add_worldgen_repeat-base",
-      "status": "failed",
-      "passed": false,
+      "status": "passed",
+      "passed": true,
       "source": "evidence/runtime/runtime-evidence.json",
-      "notes": "Client launch, content registration, block placement, both Ruby block recipes, and natural ore worldgen were observed. The command /place feature ruby_mod:ruby_ore failed, and mining/drop behavior was not directly captured; the case is therefore not recorded as passed.",
+      "notes": "Client launch, content registration, block rendering, bidirectional recipes, natural ore worldgen, configured-feature placement under valid Stone preconditions, and survival-mode mining drops were all checked. The initial /place feature failure is retained as a test-precondition attempt, not a generator defect.",
       "tested_at": "2026-07-15T09:11:55+08:00",
+      "revalidated_at": "2026-07-16T14:56:41+08:00",
+      "completed_at": "2026-07-16T15:37:06+08:00",
       "environment": {
         "side": "client",
         "minecraft": "26.1.2",
@@ -185,9 +187,9 @@
         },
         {
           "id": "block_interaction",
-          "status": "not_checked",
+          "status": "passed",
           "expected": "Ruby block and ore can be placed and mined with expected drops.",
-          "observed": "Ruby Block and Ruby Ore were placed and rendered correctly; mining and drop behavior were not directly checked."
+          "observed": "Ruby Block and Ruby Ore were placed and rendered correctly. In survival mode with an iron pickaxe, Ruby Block dropped itself and Ruby Ore dropped Ruby; both items were collected and confirmed by inventory names."
         },
         {
           "id": "recipes",
@@ -197,9 +199,9 @@
         },
         {
           "id": "placed_feature",
-          "status": "failed",
-          "expected": "Command /place feature ruby_mod:ruby_ore succeeds.",
-          "observed": "User reported that /place feature ruby_mod:ruby_ore failed."
+          "status": "passed",
+          "expected": "Command /place feature ruby_mod:ruby_ore succeeds when the target position is inside a loaded solid Stone volume.",
+          "observed": "The initial surface-context attempt returned placement failed. After filling a solid Stone volume, the same configured feature command reported successful placement, confirming that the original failure was a test-precondition issue."
         },
         {
           "id": "natural_worldgen",
@@ -253,6 +255,47 @@
           "kind": "screenshot",
           "path": "evidence/runtime/attachments/runtime_modify_worldgen/recipe-ruby-to-block.png",
           "sha256": "725dd3f7ec8f6d38c63a6e61e50e428c3b564b4b4fa94194dbae5d58aef8e886"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_modify_worldgen/placed-feature-stone-volume-success.png",
+          "sha256": "96fc6b0368205a7f53b0fa2217e5986cf9a561c10ed7cea288c71b3f282e4d2f"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_modify_worldgen/mining-before-ruby-block-and-ore.png",
+          "sha256": "1e6559e265c5132d115a80ba86dce05b71740a8d1df43760f61b58746edbcdde"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_modify_worldgen/mining-drops-in-world.png",
+          "sha256": "e44f5312b38b27632f91e8d991d199cb5402f55c875436749ff4a0c559ff825a"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_modify_worldgen/inventory-ruby-block-drop.png",
+          "sha256": "f469b8a2359cbaede105aa71361c41612ab3efe0f67062cfc273141f598ef9af"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_modify_worldgen/inventory-ruby-drop.png",
+          "sha256": "f4ebbb66e6f86e96790a6221749e6baf195504a53d588c238dfa8620ab078d8d"
+        }
+      ],
+      "attempts": [
+        {
+          "status": "failed",
+          "observed_at": "2026-07-15T09:05:23+08:00",
+          "action": "/place feature ruby_mod:ruby_ore ~ ~ ~",
+          "context": "Executed without first constructing a compatible Stone replacement volume.",
+          "result": "Minecraft returned commands.place.feature.failed."
+        },
+        {
+          "status": "passed",
+          "observed_at": "2026-07-16T14:56:41+08:00",
+          "action": "/place feature ruby_mod:ruby_ore inside a filled Stone volume",
+          "context": "The target was surrounded by minecraft:stone blocks matching stone_ore_replaceables.",
+          "result": "Minecraft reported successful placement of ruby_mod:ruby_ore."
         }
       ]
     }

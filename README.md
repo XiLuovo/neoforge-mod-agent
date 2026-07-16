@@ -19,7 +19,7 @@ Natural language
 | --- | --- | --- |
 | Offline development E2E | mock + decomposed planner：2/2 success，audit 2/2，repeat modify 1/1 | 证明离线工程链路可复现，不证明真实 provider |
 | Build showcase | 5 passed / 0 failed / 1 skipped（quality gate 未请求）；development E2E Gradle build 2/2 | 证明 generated workspace 可编译，不证明游戏内行为 |
-| Manual Minecraft runtime | 3/3 checked，2 passed / 1 failed，0 unverified | 证明实际进入 NeoForge 客户端检查；失败项完整保留 |
+| Manual Minecraft runtime | 3/3 checked，3 passed，0 failed / blocked / unverified | 证明实际进入 NeoForge 客户端检查；首次失败尝试和复验过程仍完整保留 |
 
 - 脱敏冻结的 eval/build/real-provider 报告：[Portfolio Evidence](evidence/portfolio/README.md)
 - Runtime checklist、JAR/截图 SHA-256 和逐项结果：[Minecraft Runtime Evidence](evidence/runtime/README.md)
@@ -28,12 +28,12 @@ Natural language
 
 ## Minecraft Runtime Evidence
 
-| Passed: Speed Crystal behavior | Failed case 中已通过的自然 worldgen 子项 |
+| Passed: Speed Crystal behavior | Revalidated: modify + worldgen case |
 | --- | --- |
 | ![Speed Crystal applies Speed II](evidence/runtime/attachments/runtime_speed_crystal_behavior/speed-ii-effect.png) | ![Natural Ruby Ore at Y 8](evidence/runtime/attachments/runtime_modify_worldgen/natural-ruby-ore-f3.png) |
-| Speed Crystal 在 NeoForge 客户端中触发 Speed II；截图时剩余 6 秒，物品仍保留在快捷栏。 | 在新生成区域的 `Y≈8` 观察到自然 Ruby Ore，位于配置区间 `-64..32`；但同一 case 的 `/place feature ruby_mod:ruby_ore` 失败，因此整体仍严格记为 failed。 |
+| Speed Crystal 在 NeoForge 客户端中触发 Speed II；截图时剩余 6 秒，物品仍保留在快捷栏。 | 在新生成区域的 `Y≈8` 观察到自然 Ruby Ore，位于配置区间 `-64..32`。configured feature 在实心 Stone 环境中复验放置成功。 |
 
-第三个 runtime case 很重要：内容注册、方块渲染、双向配方和自然矿石观察均通过，但 placed-feature 命令失败，且挖掘掉落没有直接验证。它说明 audit/build 通过不等于 Minecraft runtime 全部行为正确，也证明 runtime gate 会保留失败而不是把结果包装成全绿。
+第三个 runtime case 保留了一次有价值的失败→诊断→复验链：最初在不满足矿石替换条件的位置执行 `/place feature`，Minecraft 返回放置失败；源码与 Stone-volume 对照实验确认这是验收前置条件问题，而不是 generator 注册缺陷。随后又补充了生存模式挖掘证据：Ruby Block 掉落自身，Ruby Ore 掉落 Ruby。原失败尝试没有被删除，而是与成功复验一起记录。
 
 基础 Ruby 物品的客户端注册与自定义纹理证据：[held-ruby.png](evidence/runtime/attachments/runtime_basic_ruby/held-ruby.png)。
 

@@ -54,7 +54,10 @@ CASES = (
             ("content_registered", "Ruby item, block, ore, apple, and sword are available."),
             ("block_interaction", "Ruby block and ore can be placed and mined with expected drops."),
             ("recipes", "Ruby block compression and decompression recipes work."),
-            ("placed_feature", "Command /place feature ruby_mod:ruby_ore succeeds."),
+            (
+                "placed_feature",
+                "Command /place feature ruby_mod:ruby_ore succeeds when the target position is inside a loaded solid Stone volume.",
+            ),
             ("natural_worldgen", "A natural ruby ore vein is observed in a newly generated chunk between Y -64 and 32."),
         ),
     },
