@@ -10,16 +10,17 @@
 2. [quality-gate.md](quality-gate.md)
 3. [repair-loop.md](repair-loop.md)
 4. [benchmark-report.md](benchmark-report.md)
-5. [evidence-chain-report.md](evidence-chain-report.md)
-6. [eval.md](eval.md)
-7. [runtime-manual-validation.md](runtime-manual-validation.md)
-8. [failure-lab.md](failure-lab.md)
-9. [failure-repair-demo.md](failure-repair-demo.md)
-10. [failure-repair-evidence-summary.md](failure-repair-evidence-summary.md)
-11. [repair-eval.md](repair-eval.md)
-12. [doctor.md](doctor.md)
-13. [ci.md](ci.md)
-14. [golden-tests.md](golden-tests.md)
+5. [evidence-matrix.md](evidence-matrix.md)
+6. [evidence-chain-report.md](evidence-chain-report.md)
+7. [eval.md](eval.md)
+8. [runtime-manual-validation.md](runtime-manual-validation.md)
+9. [failure-lab.md](failure-lab.md)
+10. [failure-repair-demo.md](failure-repair-demo.md)
+11. [failure-repair-evidence-summary.md](failure-repair-evidence-summary.md)
+12. [repair-eval.md](repair-eval.md)
+13. [doctor.md](doctor.md)
+14. [ci.md](ci.md)
+15. [golden-tests.md](golden-tests.md)
 
 ## 文档职责
 
@@ -36,6 +37,7 @@
 - [failure-repair-evidence-summary.md](failure-repair-evidence-summary.md)：本地失败注入、tool-calling repair 和项目展示证据总览。
 - [repair-eval.md](repair-eval.md)：自修复量化。
 - [benchmark-report.md](benchmark-report.md)：benchmark 页面。
+- [evidence-matrix.md](evidence-matrix.md)：已有评测规模、证据层级和对外表述边界总览。
 - [evidence-chain-report.md](evidence-chain-report.md)：证据链报告。
 
 ## 继续阅读
