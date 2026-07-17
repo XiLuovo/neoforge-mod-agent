@@ -75,7 +75,7 @@ Markdown 表格也可以被读取，列顺序至少是：
 
 Worldgen 手工检查需要区分两条路径：
 
-- `/place feature <id>` 直接执行 configured feature，只适合验证 feature 能否在当前目标方块环境中放置。Ore feature 必须在满足其 rule test 的实心方块环境中执行，例如 `stone_ore_replaceables` 对应的 Stone；在空气、草地或不匹配方块处返回 placement failed，不等于 registry 或 generator 失败。
+- `/place feature <id>` 直接执行 configured feature，只适合验证 feature 能否在当前目标方块环境中放置。Ore feature 必须在满足其 rule test 的实心方块环境中执行，例如 `stone_ore_replaceables` 对应的 Stone，或 `deepslate_ore_replaceables` 对应的 Deepslate；在空气、草地或不匹配方块处返回 placement failed，不等于 registry 或 generator 失败。
 - 自然生成会经过 placed feature、placement modifiers 和 biome modifier。高度范围、生成次数、biome 注入和自然矿脉应在新生成区块中单独检查，不能由 `/place feature` 成功替代。
 
 验收方法本身出错时，应保留首次 attempt，再追加修正前置条件后的 revalidation，不要覆盖历史失败记录。

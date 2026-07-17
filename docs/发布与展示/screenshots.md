@@ -16,7 +16,7 @@
 
 ## 现有资产
 
-`evidence/runtime/attachments/` 当前保存 3 个人工 runtime case 的截图，三例均已完成并通过。modify/worldgen case 还保留了首次 `/place feature ruby_mod:ruby_ore` 失败与 Stone-volume 成功复验：展示时必须说明失败来自测试前置条件，而不是删除失败记录或误写成 generator 修复。
+`evidence/runtime/attachments/` 当前保存 4 个人工 runtime case 的截图，四例均已完成并通过。modify/worldgen case 保留首次命令失败与 Stone-volume 成功复验；Deepslate revalidation case 记录了 Deepslate configured-feature 放置和 `Y<0` 自然生成。展示时必须区分验收方法修正与 generator 语义修复。
 
 `docs/assets/` 中的旧 dashboard 或 benchmark 图片可作为历史展示素材，但不要把它们当作当前主证据。当前主证据以公开冻结 report、`.agent` trace、runtime checklist 和带 hash 的截图附件为准。
 

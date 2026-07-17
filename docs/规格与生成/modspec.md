@@ -144,6 +144,8 @@ Entity generation is template-based. It supports registration, attributes, simpl
 }
 ```
 
+当 `worldgen.min_y < 0` 时，确定性 generator 会为同一个 ore state 同时生成 `minecraft:stone_ore_replaceables` 和 `minecraft:deepslate_ore_replaceables` 两个 configured-feature target，使声明的负高度范围同时覆盖普通石头层和深板岩层。当 `min_y >= 0` 时只生成 Stone target。当前不会自动创建独立的 Deepslate Ore 方块变体。
+
 ### Food
 
 ```json

@@ -1,8 +1,8 @@
 # Minecraft Runtime Evidence Summary
 
-- Planned: `3`
-- Checked: `3`
-- Passed: `3`
+- Planned: `4`
+- Checked: `4`
+- Passed: `4`
 - Failed: `0`
 - Blocked: `0`
 - Runtime unverified: `0`

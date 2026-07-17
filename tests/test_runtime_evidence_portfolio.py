@@ -56,7 +56,7 @@ class RuntimeEvidencePortfolioTests(unittest.TestCase):
     def test_require_complete_rejects_unverified_draft(self) -> None:
         payload = build_draft(PROJECT_ROOT)
         errors = validate(payload, PROJECT_ROOT, require_complete=True)
-        self.assertEqual(sum("runtime remains unverified" in error for error in errors), 3)
+        self.assertEqual(sum("runtime remains unverified" in error for error in errors), 4)
 
     def test_checked_case_requires_attachment(self) -> None:
         payload = build_draft(PROJECT_ROOT)

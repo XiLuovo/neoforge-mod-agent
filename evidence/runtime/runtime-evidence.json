@@ -298,6 +298,67 @@
           "result": "Minecraft reported successful placement of ruby_mod:ruby_ore."
         }
       ]
+    },
+    {
+      "schema_version": "manual-runtime-evidence/v1",
+      "evidence_kind": "manual_minecraft_runtime",
+      "id": "runtime_deepslate_worldgen_revalidation",
+      "title": "Deepslate ore target revalidation",
+      "workspace": "workspace/deepslate-worldgen-revalidation-20260717",
+      "status": "passed",
+      "passed": true,
+      "source": "evidence/runtime/runtime-evidence.json",
+      "notes": "Generator, audit, and Gradle build passed. Minecraft runtime revalidation confirmed configured-feature placement inside a solid Deepslate volume and natural Ruby Ore below Y=0 in newly generated Deepslate terrain.",
+      "tested_at": "2026-07-17T12:59:39+08:00",
+      "environment": {
+        "side": "client",
+        "minecraft": "26.1.2",
+        "neoforge": "26.1.2.30-beta",
+        "java": "25"
+      },
+      "artifact": {
+        "jar": "build/libs/ruby_mod-0.8.0.jar",
+        "sha256": "594363624d9783ec070b23d8b5b84f5934d954db4bf7ce296d2fca543b92fbf4"
+      },
+      "provenance": {
+        "modspec": ".agent/modspec.json",
+        "modspec_sha256": "112aca10b2fa5f38f021a73949a08931eead5761f7d193afe08e67781d560a8e",
+        "audit": ".agent/audit-report.json",
+        "build": ".agent/logs/gradle-build.json",
+        "missing": []
+      },
+      "checks": [
+        {
+          "id": "client_launch",
+          "status": "passed",
+          "expected": "NeoForge client reaches a newly created world without a mod initialization crash.",
+          "observed": "NeoForge 26.1.2 client entered a newly created single-player world without a mod initialization crash."
+        },
+        {
+          "id": "deepslate_configured_feature",
+          "status": "passed",
+          "expected": "Command /place feature ruby_mod:ruby_ore succeeds inside a loaded solid Deepslate volume.",
+          "observed": "After filling a solid Deepslate volume, Minecraft reported successful placement of ruby_mod:ruby_ore."
+        },
+        {
+          "id": "natural_deepslate_worldgen",
+          "status": "passed",
+          "expected": "A natural Ruby Ore is observed below Y=0 in newly generated Deepslate terrain.",
+          "observed": "F3 evidence shows natural Ruby Ore in Deepslate terrain at approximately Y=-28."
+        }
+      ],
+      "attachments": [
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_deepslate_worldgen_revalidation/deepslate-configured-feature-success.png",
+          "sha256": "371cde12316a1dc1f47c855efa8e675c449b254022e5b5adb37cbbf8118ef506"
+        },
+        {
+          "kind": "screenshot",
+          "path": "evidence/runtime/attachments/runtime_deepslate_worldgen_revalidation/natural-ruby-ore-y-negative-28.png",
+          "sha256": "9baaa55d8bf3eb1acfee6d14280d463906ef4d40eb98824cec67cd6000742066"
+        }
+      ]
     }
   ]
 }

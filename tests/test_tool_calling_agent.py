@@ -349,11 +349,14 @@ class ToolCallingAgentTests(unittest.TestCase):
 
             actions = [entry["action"] for entry in result.trace]
             repaired = json.loads(configured.read_text(encoding="utf-8"))
-            rule_test = repaired["config"]["targets"][0]["target"]
+            repaired_targets = repaired["config"]["targets"]
+            rule_test = repaired_targets[0]["target"]
             self.assertTrue(result.success)
             self.assertEqual(actions, ["apply_structured_patch", "run_audit", "regenerate_managed_files"])
             self.assertEqual(rule_test["predicate_type"], "minecraft:tag_match")
             self.assertEqual(rule_test["tag"], "minecraft:stone_ore_replaceables")
+            self.assertEqual(repaired_targets[1]["target"]["tag"], "minecraft:deepslate_ore_replaceables")
+            self.assertTrue(all(target["state"]["Name"] == "ruby_mod:ruby_ore" for target in repaired_targets))
 
 
 if __name__ == "__main__":

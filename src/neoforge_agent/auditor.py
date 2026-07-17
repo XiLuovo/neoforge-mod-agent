@@ -370,7 +370,16 @@ class WorkspaceAuditor:
             if configured.exists():
                 text = configured.read_text(encoding="utf-8")
                 self._check_contains(result, f"ore:{ore.identifier}:configured_ref", text, f"{spec.mod_id}:{ore.identifier}", str(configured))
-                self._audit_configured_feature_rule_test(result, f"ore:{ore.identifier}", configured, expected_reference="minecraft:stone_ore_replaceables")
+                expected_references = ["minecraft:stone_ore_replaceables"]
+                if ore.worldgen.min_y < 0:
+                    expected_references.append("minecraft:deepslate_ore_replaceables")
+                self._audit_configured_feature_rule_test(
+                    result,
+                    f"ore:{ore.identifier}",
+                    configured,
+                    expected_references=tuple(expected_references),
+                    expected_state=f"{spec.mod_id}:{ore.identifier}",
+                )
             if placed.exists():
                 text = placed.read_text(encoding="utf-8")
                 self._check_contains(result, f"ore:{ore.identifier}:placed_ref", text, f"{spec.mod_id}:{ore.identifier}", str(placed))
@@ -417,7 +426,13 @@ class WorkspaceAuditor:
                 text = configured.read_text(encoding="utf-8")
                 self._check_contains(result, f"world_feature:{feature.identifier}:placed_block", text, feature.placed_block, str(configured))
                 self._check_contains(result, f"world_feature:{feature.identifier}:vein_size", text, str(feature.vein_size), str(configured))
-                self._audit_configured_feature_rule_test(result, f"world_feature:{feature.identifier}", configured, expected_reference=feature.target_block)
+                self._audit_configured_feature_rule_test(
+                    result,
+                    f"world_feature:{feature.identifier}",
+                    configured,
+                    expected_references=(feature.target_block,),
+                    expected_state=self._world_reference(spec, feature.placed_block),
+                )
             if placed.exists():
                 text = placed.read_text(encoding="utf-8")
                 self._check_contains(result, f"world_feature:{feature.identifier}:placed_ref", text, f"{spec.mod_id}:{feature.identifier}", str(placed))
@@ -760,7 +775,15 @@ class WorkspaceAuditor:
                     return candidate
         return None
 
-    def _audit_configured_feature_rule_test(self, result: AuditResult, prefix: str, path: Path, *, expected_reference: str) -> None:
+    def _audit_configured_feature_rule_test(
+        self,
+        result: AuditResult,
+        prefix: str,
+        path: Path,
+        *,
+        expected_references: tuple[str, ...],
+        expected_state: str,
+    ) -> None:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
@@ -772,28 +795,63 @@ class WorkspaceAuditor:
         self._check(result, f"{prefix}:configured_targets", ok_targets, str(path), None if ok_targets else "Configured feature must declare a non-empty config.targets array.")
         if not ok_targets:
             return
-        first = targets[0]
-        ok_first = isinstance(first, dict)
-        self._check(result, f"{prefix}:configured_target_entry", ok_first, str(path), None if ok_first else "Configured feature target entry must be an object.")
-        if not ok_first:
-            return
-        rule_test = first.get("target")
-        ok_rule_test = isinstance(rule_test, dict)
-        self._check(result, f"{prefix}:configured_rule_test", ok_rule_test, str(path), None if ok_rule_test else "Configured feature target must be a rule-test object, not a bare string.")
-        if not ok_rule_test:
-            return
-        predicate_type = rule_test.get("predicate_type")
-        ok_predicate = predicate_type in {"minecraft:tag_match", "minecraft:block_match"}
-        self._check(result, f"{prefix}:configured_predicate_type", ok_predicate, str(path), None if ok_predicate else "Configured feature target.predicate_type must be minecraft:tag_match or minecraft:block_match.")
-        expected_key = "tag" if str(expected_reference).startswith("#") or str(expected_reference).endswith("_replaceables") else "block"
-        expected_value = expected_reference[1:] if expected_key == "tag" and str(expected_reference).startswith("#") else expected_reference
-        self._check(
-            result,
-            f"{prefix}:configured_predicate_value",
-            rule_test.get(expected_key) == expected_value,
-            str(path),
-            None if rule_test.get(expected_key) == expected_value else f"Configured feature target must store '{expected_value}' under '{expected_key}'.",
-        )
+        actual_references: set[str] = set()
+        for index, entry in enumerate(targets):
+            suffix = "" if index == 0 else f":{index}"
+            ok_entry = isinstance(entry, dict)
+            self._check(
+                result,
+                f"{prefix}:configured_target_entry{suffix}",
+                ok_entry,
+                str(path),
+                None if ok_entry else "Configured feature target entry must be an object.",
+            )
+            if not ok_entry:
+                continue
+            rule_test = entry.get("target")
+            ok_rule_test = isinstance(rule_test, dict)
+            self._check(
+                result,
+                f"{prefix}:configured_rule_test{suffix}",
+                ok_rule_test,
+                str(path),
+                None if ok_rule_test else "Configured feature target must be a rule-test object, not a bare string.",
+            )
+            if ok_rule_test:
+                predicate_type = rule_test.get("predicate_type")
+                ok_predicate = predicate_type in {"minecraft:tag_match", "minecraft:block_match"}
+                self._check(
+                    result,
+                    f"{prefix}:configured_predicate_type{suffix}",
+                    ok_predicate,
+                    str(path),
+                    None if ok_predicate else "Configured feature target.predicate_type must be minecraft:tag_match or minecraft:block_match.",
+                )
+                if predicate_type == "minecraft:tag_match" and isinstance(rule_test.get("tag"), str):
+                    actual_references.add(rule_test["tag"])
+                elif predicate_type == "minecraft:block_match" and isinstance(rule_test.get("block"), str):
+                    actual_references.add(rule_test["block"])
+            state = entry.get("state")
+            actual_state = state.get("Name") if isinstance(state, dict) else None
+            self._check(
+                result,
+                f"{prefix}:configured_state{suffix}",
+                actual_state == expected_state,
+                str(path),
+                None if actual_state == expected_state else f"Configured feature target state.Name must be '{expected_state}'.",
+            )
+
+        for expected_reference in expected_references:
+            expected_value = expected_reference[1:] if expected_reference.startswith("#") else expected_reference
+            self._check(
+                result,
+                f"{prefix}:configured_required_target:{expected_value}",
+                expected_value in actual_references,
+                str(path),
+                None
+                if expected_value in actual_references
+                else f"Configured feature targets must include '{expected_value}'.",
+            )
 
     def _audit_dimension_type_runtime_shape(self, result: AuditResult, prefix: str, path: Path) -> None:
         try:

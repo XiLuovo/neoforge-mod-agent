@@ -61,6 +61,23 @@ CASES = (
             ("natural_worldgen", "A natural ruby ore vein is observed in a newly generated chunk between Y -64 and 32."),
         ),
     },
+    {
+        "id": "runtime_deepslate_worldgen_revalidation",
+        "title": "Deepslate ore target revalidation",
+        "workspace": "workspace/deepslate-worldgen-revalidation-20260717",
+        "jar": "build/libs/ruby_mod-0.8.0.jar",
+        "checks": (
+            ("client_launch", "NeoForge client reaches a newly created world without a mod initialization crash."),
+            (
+                "deepslate_configured_feature",
+                "Command /place feature ruby_mod:ruby_ore succeeds inside a loaded solid Deepslate volume.",
+            ),
+            (
+                "natural_deepslate_worldgen",
+                "A natural Ruby Ore is observed below Y=0 in newly generated Deepslate terrain.",
+            ),
+        ),
+    },
 )
 
 

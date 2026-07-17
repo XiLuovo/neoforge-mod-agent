@@ -445,7 +445,17 @@ def default_golden_cases() -> list[GoldenCase]:
                 "src/main/resources/data/ruby_mod/loot_table/blocks/ruby_ore.json",
             ],
             json_expectations=[
-                GoldenJsonExpectation("src/main/resources/data/ruby_mod/worldgen/configured_feature/ruby_ore.json", {"type": "minecraft:ore", "config.size": 6}, contains=["ruby_mod:ruby_ore"]),
+                GoldenJsonExpectation(
+                    "src/main/resources/data/ruby_mod/worldgen/configured_feature/ruby_ore.json",
+                    {
+                        "type": "minecraft:ore",
+                        "config.size": 6,
+                        "config.targets.0.target.tag": "minecraft:stone_ore_replaceables",
+                        "config.targets.0.state.Name": "ruby_mod:ruby_ore",
+                        "config.targets.1.target.tag": "minecraft:deepslate_ore_replaceables",
+                        "config.targets.1.state.Name": "ruby_mod:ruby_ore",
+                    },
+                ),
                 GoldenJsonExpectation("src/main/resources/data/ruby_mod/worldgen/placed_feature/ruby_ore.json", {"feature": "ruby_mod:ruby_ore", "placement.0.count": 4}, contains=["minecraft:height_range"]),
                 GoldenJsonExpectation("src/main/resources/data/ruby_mod/neoforge/biome_modifier/add_ruby_ore.json", {"type": "neoforge:add_features", "step": "underground_ores"}, contains=["#minecraft:is_overworld"]),
             ],

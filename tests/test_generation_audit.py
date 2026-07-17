@@ -557,9 +557,119 @@ class GenerationAuditTests(unittest.TestCase):
                     / "ruby_ore.json"
                 ).read_text(encoding="utf-8")
             )
-            ore_rule_test = configured_feature["config"]["targets"][0]["target"]
-            self.assertEqual(ore_rule_test["predicate_type"], "minecraft:tag_match")
-            self.assertEqual(ore_rule_test["tag"], "minecraft:stone_ore_replaceables")
+            ore_targets = configured_feature["config"]["targets"]
+            self.assertEqual(
+                [target["target"] for target in ore_targets],
+                [
+                    {
+                        "predicate_type": "minecraft:tag_match",
+                        "tag": "minecraft:stone_ore_replaceables",
+                    },
+                    {
+                        "predicate_type": "minecraft:tag_match",
+                        "tag": "minecraft:deepslate_ore_replaceables",
+                    },
+                ],
+            )
+            self.assertTrue(all(target["state"]["Name"] == "ruby_mod:ruby_ore" for target in ore_targets))
+
+    def test_ore_worldgen_audit_rejects_missing_deepslate_target_below_zero(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+            planner = ModProjectPlanner(config)
+            spec = planner.spec_from_file(PROJECT_ROOT / "examples" / "ruby_worldgen.json")
+
+            result = planner.execute_spec(
+                spec,
+                workspace_name="ruby-worldgen-missing-deepslate",
+                overwrite=True,
+                run_build=False,
+            )
+            configured_path = (
+                result.workspace_dir
+                / "src"
+                / "main"
+                / "resources"
+                / "data"
+                / "ruby_mod"
+                / "worldgen"
+                / "configured_feature"
+                / "ruby_ore.json"
+            )
+            configured_feature = json.loads(configured_path.read_text(encoding="utf-8"))
+            configured_feature["config"]["targets"] = configured_feature["config"]["targets"][:1]
+            configured_path.write_text(json.dumps(configured_feature, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            audit = WorkspaceAuditor(config).audit_workspace(result.workspace_dir)
+
+            self.assertFalse(audit.success)
+            self.assertTrue(any("deepslate_ore_replaceables" in issue.message for issue in audit.errors))
+
+    def test_ore_worldgen_above_zero_does_not_require_deepslate_target(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+            planner = ModProjectPlanner(config)
+            spec = planner.spec_from_file(PROJECT_ROOT / "examples" / "ruby_worldgen.json")
+            spec.ores[0].worldgen.min_y = 0
+
+            result = planner.execute_spec(
+                spec,
+                workspace_name="ruby-worldgen-above-zero",
+                overwrite=True,
+                run_build=False,
+            )
+            audit = WorkspaceAuditor(config).audit_workspace(result.workspace_dir)
+            configured_feature = json.loads(
+                (
+                    result.workspace_dir
+                    / "src"
+                    / "main"
+                    / "resources"
+                    / "data"
+                    / "ruby_mod"
+                    / "worldgen"
+                    / "configured_feature"
+                    / "ruby_ore.json"
+                ).read_text(encoding="utf-8")
+            )
+
+            self.assertTrue(audit.success)
+            self.assertEqual(len(configured_feature["config"]["targets"]), 1)
+            self.assertEqual(
+                configured_feature["config"]["targets"][0]["target"]["tag"],
+                "minecraft:stone_ore_replaceables",
+            )
+
+    def test_ore_worldgen_audit_rejects_wrong_deepslate_target_state(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+            planner = ModProjectPlanner(config)
+            spec = planner.spec_from_file(PROJECT_ROOT / "examples" / "ruby_worldgen.json")
+            result = planner.execute_spec(
+                spec,
+                workspace_name="ruby-worldgen-wrong-deepslate-state",
+                overwrite=True,
+                run_build=False,
+            )
+            configured_path = (
+                result.workspace_dir
+                / "src"
+                / "main"
+                / "resources"
+                / "data"
+                / "ruby_mod"
+                / "worldgen"
+                / "configured_feature"
+                / "ruby_ore.json"
+            )
+            configured_feature = json.loads(configured_path.read_text(encoding="utf-8"))
+            configured_feature["config"]["targets"][1]["state"]["Name"] = "minecraft:diamond_ore"
+            configured_path.write_text(json.dumps(configured_feature, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            audit = WorkspaceAuditor(config).audit_workspace(result.workspace_dir)
+
+            self.assertFalse(audit.success)
+            self.assertTrue(any("state.Name" in issue.message for issue in audit.errors))
 
     def test_entity_mob_dsl_generation_passes_audit(self) -> None:
         with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:

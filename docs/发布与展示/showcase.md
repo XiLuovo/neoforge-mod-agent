@@ -133,7 +133,7 @@ workspace/evidence-chain-runs/<run-id>/.agent/evidence-chain-report.md
 
 这条路线的价值是把自动 gate 和人工 runtime 验证分开说清楚：build 证明 jar 可编译，runtime evidence 才能支撑“进游戏检查过”的结论。
 
-当前首批人工 runtime evidence 位于 `evidence/runtime/`：3 个 case 已全部检查并通过。modify/worldgen case 曾在不满足 ore replacement target 的位置执行 `/place feature ruby_mod:ruby_ore` 而失败；Stone-volume 对照实验确认 configured feature 能正常放置，随后又补齐生存模式挖掘和掉落证据。公开展示时应保留首次失败与成功复验两次 attempt，说明 runtime validation 同时检查产品行为和验收方法本身。
+当前人工 runtime evidence 位于 `evidence/runtime/`：4 个 case 已全部检查并通过。前三例覆盖基础物品、动态行为和 modify/worldgen；第四例针对负高度矿石缺少 Deepslate target 的真实语义缺口，完成了 generator/audit/build 修正及 `Y<0` 自然生成复验。公开展示仍应保留第三例首次失败与成功复验两次 attempt，区分验收方法问题和 generator 缺陷。
 
 ## Repair / RAG 补充
 

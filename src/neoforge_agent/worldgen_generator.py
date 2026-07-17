@@ -297,7 +297,19 @@ class WorldgenGenerator:
                                 "state": {
                                     "Name": f"{spec.mod_id}:{ore.identifier}",
                                 },
-                            }
+                            },
+                            *(
+                                [
+                                    {
+                                        "target": self._rule_test_payload("minecraft:deepslate_ore_replaceables"),
+                                        "state": {
+                                            "Name": f"{spec.mod_id}:{ore.identifier}",
+                                        },
+                                    }
+                                ]
+                                if ore.worldgen.min_y < 0
+                                else []
+                            ),
                         ],
                     },
                 },

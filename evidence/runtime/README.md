@@ -2,13 +2,14 @@
 
 这里保存人工 Minecraft runtime 验收的源记录。所有 case 初始都是 `runtime_unverified`；只有实际启动对应 workspace、完成 checklist、记录观察结果并附上截图或日志后，才能改为 `passed` 或 `failed`。
 
-当前首批结果：`3/3 checked`、`3 passed`、`0 failed / blocked / unverified`。第三例保留了首次 `/place feature ruby_mod:ruby_ore` 失败记录；诊断确认执行位置缺少可替换 Stone，随后在实心 Stone 环境中复验成功，并补齐了生存模式挖掘与掉落证据。
+当前结果：`4/4 checked`、`4 passed`、`0 failed / blocked / unverified`。第三例保留了首次 `/place feature ruby_mod:ruby_ore` 失败记录；第四例验证了修正后的 Deepslate target 和 `Y<0` 自然生成。
 
 ## 当前候选
 
 1. `runtime_basic_ruby`：最小客户端启动、Mod 加载和 Ruby 物品注册。
 2. `runtime_speed_crystal_behavior`：右键触发 Speed II 约 10 秒，并确认物品不消耗。
 3. `runtime_modify_worldgen`：modify lane 生成的物品、方块、双向配方、自然矿脉、configured feature 放置和挖掘掉落均已检查；首次失败尝试与复验记录同时保留。
+4. `runtime_deepslate_worldgen_revalidation`：新 generator 输出同时覆盖 Stone / Deepslate targets；在实心 Deepslate 中放置成功，并在 `Y≈-28` 的新生成深板岩地形中观察到自然 Ruby Ore。
 
 暂不把 `progression_mod` 作为首批通过目标：当前静态检查发现 compressor 没有产出流程，structure template pool 也没有可见结构元素。它更适合作为后续 runtime failure → repair 的案例。
 
@@ -24,7 +25,7 @@ py -3.11 scripts/runtime_evidence_portfolio.py check --require-complete
 
 ## 启动约定
 
-三个 workspace 均要求 Java 25。PowerShell 中先设置：
+这些 workspace 均要求 Java 25。PowerShell 中先设置：
 
 ```powershell
 $env:GRADLE_USER_HOME = (Resolve-Path .\.gradle-user-home)
