@@ -1,6 +1,6 @@
 # 真实 LLM 证据总览
 
-这页汇总真实 provider 稳定性实验的结论，用于项目说明和展示复盘。当前 checkout 中没有 `decomposed-planner-5case-ab` 与 `decomposed-real-llm-13case-smoke` 的原始 run；相关数字属于历史实验记录，在补充脱敏原始报告前标为待复验。现有可公开核对的旧 run 见 `evidence/portfolio/real-provider-13case-historical/`，它不是 decomposed planner 证据。
+这页汇总真实 provider 稳定性实验的结论，用于项目说明和展示复盘。2026-07-18 已重新运行 5-case full-schema / decomposed A/B，并将两组 batch 与 decomposed 单 case retry 的脱敏报告纳入 `evidence/portfolio/`。2026-06-26 的 decomposed 13-case 数字仍属于历史实验记录，原始 run 未进入当前 checkout，因此继续标为待复验。
 
 ## 一句话结论
 
@@ -8,7 +8,7 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 
 当前对外统计口径分层说明：
 
-- decomposed planner A/B：5 个 real-provider generate case 中，decomposed planner `5/5` strict success、audit `5/5`、fallback `0`；相比 full-schema planner，provider-reported total tokens 从 `254,310` 降到 `5,875`，约降 `97.7%`。
+- 当前 5-case A/B：修复后的 decomposed batch `5/5` strict + audit；full-schema batch `5/5` strict + audit。decomposed total tokens `6,917`，full-schema `253,819`，约降 `97.3%`；平均延迟约 `10.9s` 对 `46.0s`。修复前的 `4/5` batch 失败仍作为独立 evidence 保留。
 - decomposed 13-case smoke：`12/13` strict real LLM success，audit `12/13`，fallback `0`，total tokens `22,904`；唯一失败是 `ruby_realm_world_structure`，属于 dimension / biome / structure / loot 复合世界生成的 planner/schema 覆盖边界。
 - runtime 边界：没有传入 runtime evidence 的 case 只能记为 runtime unverified，不能表述成 Minecraft 客户端或服务端内验证通过。
 - build 边界：代表性 real-provider generated workspaces 有 Gradle build follow-up；额外历史 3 个 build case 中 provider/schema/audit 全部通过，依赖重试后 `3/3` strict generated projects 可 Gradle build。
@@ -17,13 +17,16 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 
 | 实验 | 日期 | 配置 | 结果 | 证明范围 |
 | --- | --- | --- | --- | --- |
-| `decomposed-planner-5case-ab` | 2026-06-26 | real provider, audit, no build, no runtime evidence | decomposed `5/5` strict success；audit `5/5`；fallback `0`；total tokens `5,875`；相比 full-schema total tokens 降约 `97.7%` | decomposed planner 相比 full-schema 大 prompt 的 token、延迟和稳定性差异 |
+| `resume-ab-20260718-decomposed-5case-fix1` | 2026-07-18 | real provider, decomposed, audit, no build, no runtime evidence | `5/5` strict + audit；total tokens `6,917`；平均延迟 `10.9s` | 修复后 decomposed planner 的当前可复验结果 |
+| `resume-ab-20260718-fullschema-5case` | 2026-07-18 | real provider, full-schema, audit, no build, no runtime evidence | `5/5` strict + audit；total tokens `253,819`；平均延迟 `46.0s` | 同条件 full-schema 对照 |
+| `resume-ab-20260718-decomposed-5case` | 2026-07-18 | real provider, decomposed, audit, no build, no runtime evidence | 修复前 `4/5`；`basic_ruby` 单独 retry `1/1` | 失败→修复前基线；不能被 retry 改写 |
+| `decomposed-planner-5case-ab` | 2026-06-26 | historical summary only; raw run unavailable | 历史记录：decomposed `5/5`、full-schema `5/5*`；total tokens 约降 `97.7%` | 仅作历史对照，不作为当前可复验主指标 |
 | `decomposed-real-llm-13case-smoke` | 2026-06-26 | real provider, decomposed planner, audit, no build, no runtime evidence | `12/13` strict real LLM success；audit `12/13`；fallback `0`；total tokens `22,904` | decomposed planner 在垂直领域 13-case 集合上的真实 provider 稳定性和覆盖边界 |
 | `real-llm-13case-runtime-upgrade` | 2026-06-05 | real provider, audit, no build, no runtime evidence | `12/13` strict real LLM success；`1` schema failure；`13` runtime unverified | 真实 provider 13 case 稳定性、失败分类、runtime 证据边界 |
 | `real-llm-10case-after-fix` | 2026-06-04 | real provider, audit, no build | `10/10` strict real LLM success | 真实模型到 ModSpec、生成器、audit 的稳定性 |
 | `real-llm-build-3case-20260604-223533` | 2026-06-04 | real provider, audit, build | 原始统计 `1/3` build success；依赖重试后 `3/3` build success | 真实模型生成项目的 Gradle 编译可行性，以及外部依赖失败分类 |
 
-## Decomposed Planner A/B
+## 当前可复验的 5-Case A/B（2026-07-18）
 
 运行配置：
 
@@ -38,17 +41,23 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 
 | Planner | Strict real LLM | Audit | Fallback | Input Tokens | Output Tokens | Total Tokens | Avg Latency |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `decomposed` | `5/5` | `5/5` | `0` | `3,543` | `2,332` | `5,875` | `25.1s` |
-| `full-schema llm` | `5/5*` | `5/5` | `0` | `247,395` | `6,915` | `254,310` | `44.7s` |
+| `decomposed` post-fix batch | `5/5` | `5/5` | `0` | `4,715` | `2,202` | `6,917` | `10.9s` |
+| `full-schema llm` batch | `5/5` | `5/5` | `0` | `246,052` | `7,767` | `253,819` | `46.0s` |
 
-`Input Tokens`、`Output Tokens` 和 `Total Tokens` 均来自 provider usage 字段，不是按 prompt 文本估算。`full-schema llm` 的批量运行曾有一个 case 返回空输出并触发 schema failure，单独重试后通过，所以公开说明时写作 `5/5*`，并保留稳定性边界。这个对比证明的是 planner 拆分对 prompt 体量、延迟和长上下文稳定性的影响，不证明 Minecraft runtime。
+`Input Tokens`、`Output Tokens` 和 `Total Tokens` 均来自 provider usage 字段，不是按 prompt 文本估算。修复前 decomposed batch 的 `basic_ruby` 因生成无效 ModSpec 归为 `agent_failure`；修复后同一 5-case 集合达到 `5/5`。修复后报告仍可能记录 progression link 等语义警告，因此这里证明的是 strict planning + audit 稳定性，不是所有自然语言语义都已 runtime 验收。
 
 关键结论：
 
-- decomposed planner 将输入 token 从 `247,395` 降到 `3,543`，约降 `98.6%`。
-- decomposed planner 将 total tokens 从 `254,310` 降到 `5,875`，约降 `97.7%`。
-- 平均延迟从 `44.7s` 降到 `25.1s`。
-- decomposed planner 在 5-case 批量 strict run 中没有 fallback；full-schema planner 的长上下文批量运行出现过空输出，需要单 case 重试。
+- decomposed post-fix 将输入 token 从 `246,052` 降到 `4,715`，约降 `98.1%`。
+- decomposed post-fix 将 total tokens 从 `253,819` 降到 `6,917`，约降 `97.3%`。
+- 平均延迟从 `46.0s` 降到 `10.9s`。
+- 修复前 `4/5`、修复后 `5/5` 的并列证据说明：prompt 拆分带来显著成本/延迟收益，同时确定性 hardening 修复了由 unsupported dependency、vanilla namespace 和 recipe ID collision 造成的失败。
+
+脱敏冻结报告见 [Portfolio Evidence](../../evidence/portfolio/README.md)。
+
+## 历史 5-Case A/B（2026-06-26，待复验）
+
+历史摘要记录 decomposed `5/5`、full-schema `5/5*`，total tokens `254,310 -> 5,875`、平均延迟 `44.7s -> 25.1s`。对应 raw run 不在当前 checkout，因此这些数字只作演进对照，不作为当前公开主指标。
 
 ## Decomposed 13-Case Smoke
 

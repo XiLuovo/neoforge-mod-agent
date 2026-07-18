@@ -11,6 +11,7 @@ from .config import AppConfig
 from .evidence_writer import AgentEvidenceWriter
 from .llm_output_normalizer import (
     DECOMPOSED_PLANNER_NORMALIZATION as DECOMPOSED_NORMALIZATION,
+    VANILLA_RECIPE_REFERENCE_IDS,
     normalize_llm_modspec_output,
     normalize_llm_patch_output,
 )
@@ -2143,15 +2144,49 @@ def _harden_decomposed_composed_features(
     result_ids.update(extra_known_ids or set())
     hardened = [dict(feature) for feature in features]
     extra_stage_ids_by_progression = extra_stage_ids_by_progression or {}
+    planned_recipes = {
+        str(feature.get("id")): feature
+        for feature in feature_plan.get("features", [])
+        if isinstance(feature, dict) and feature.get("type") == "recipe" and feature.get("id")
+    }
 
+    dependency_checked: list[dict[str, Any]] = []
+    for feature in hardened:
+        if feature.get("type") == "recipe":
+            planned = planned_recipes.get(str(feature.get("id", "")), {})
+            missing = _missing_decomposed_recipe_dependencies(planned, mod_id, result_ids)
+            if missing:
+                warnings.append(
+                    f"Decomposed recipe '{feature.get('id', 'generated_recipe')}' was removed because its "
+                    f"missing internal dependency could not be generated: {', '.join(missing)}."
+                )
+                continue
+        dependency_checked.append(feature)
+    hardened = dependency_checked
+
+    used_recipe_ids: set[str] = set()
     for feature in hardened:
         feature_type = str(feature.get("type", ""))
         identifier = str(feature.get("id", ""))
+        source_recipe_id = identifier
         _harden_decomposed_behavior(feature, warnings)
         if feature_type == "ore":
             _harden_decomposed_ore_feature(feature, feature_plan, mod_id, known_ids, warnings)
         elif feature_type == "recipe":
             _harden_decomposed_recipe_feature(feature, feature_plan, mod_id, known_ids, result_ids, warnings)
+            canonical_recipe_id = str(feature.get("id", ""))
+            if canonical_recipe_id in used_recipe_ids:
+                fallback_id = source_recipe_id
+                suffix = 2
+                while fallback_id in used_recipe_ids:
+                    fallback_id = f"{source_recipe_id}_{suffix}"
+                    suffix += 1
+                feature["id"] = fallback_id
+                warnings.append(
+                    f"Decomposed recipe id collision on '{canonical_recipe_id}'; kept unique id '{fallback_id}'."
+                )
+                canonical_recipe_id = fallback_id
+            used_recipe_ids.add(canonical_recipe_id)
         elif feature_type == "progression":
             _harden_decomposed_progression_feature(
                 feature,
@@ -2161,6 +2196,31 @@ def _harden_decomposed_composed_features(
             )
 
     return hardened, warnings
+
+
+def _missing_decomposed_recipe_dependencies(
+    planned_recipe: dict[str, Any],
+    mod_id: str,
+    result_ids: set[str],
+) -> list[str]:
+    dependencies = planned_recipe.get("depends_on", [])
+    if not isinstance(dependencies, list):
+        return []
+
+    missing: list[str] = []
+    for dependency in dependencies:
+        reference = str(dependency).strip()
+        if not reference:
+            continue
+        if ":" in reference:
+            namespace, _ = reference.split(":", 1)
+            if namespace and namespace != mod_id:
+                continue
+        local_id = _local_reference_id(reference)
+        if local_id in result_ids or local_id in VANILLA_RECIPE_REFERENCE_IDS:
+            continue
+        missing.append(local_id or reference)
+    return missing
 
 
 def _harden_decomposed_behavior(feature: dict[str, Any], warnings: list[str]) -> None:

@@ -48,6 +48,66 @@ RUNS = (
             "decomposed-planner token or latency claims. No Minecraft runtime validation."
         ),
     ),
+    EvidenceRun(
+        evidence_id="real-provider-decomposed-5case-20260718",
+        source_dir=(
+            "workspace/real-llm-stability-runs/"
+            "resume-ab-20260718-decomposed-5case/.agent"
+        ),
+        files=("real-llm-stability.json", "real-llm-stability.md"),
+        provider="real-provider",
+        validation=("provider", "schema", "generator", "audit"),
+        boundary=(
+            "Current decomposed batch result: 4/5 strict success. The failed basic_ruby "
+            "case is preserved and must not be replaced by the separate retry. No Gradle "
+            "build or Minecraft runtime validation."
+        ),
+    ),
+    EvidenceRun(
+        evidence_id="real-provider-fullschema-5case-20260718",
+        source_dir=(
+            "workspace/real-llm-stability-runs/"
+            "resume-ab-20260718-fullschema-5case/.agent"
+        ),
+        files=("real-llm-stability.json", "real-llm-stability.md"),
+        provider="real-provider",
+        validation=("provider", "schema", "generator", "audit"),
+        boundary=(
+            "Current full-schema batch result: 5/5 strict success. This is audit-level "
+            "evidence with no Gradle build or Minecraft runtime validation."
+        ),
+    ),
+    EvidenceRun(
+        evidence_id="real-provider-decomposed-basic-retry-20260718",
+        source_dir=(
+            "workspace/real-llm-stability-runs/"
+            "resume-ab-20260718-decomposed-basic-retry/.agent"
+        ),
+        files=("real-llm-stability.json", "real-llm-stability.md"),
+        provider="real-provider",
+        validation=("provider", "schema", "generator", "audit"),
+        boundary=(
+            "A separate retry of the failed decomposed basic_ruby case passed. It records "
+            "sampling variability and does not change the original batch result from 4/5. "
+            "No Gradle build or Minecraft runtime validation."
+        ),
+    ),
+    EvidenceRun(
+        evidence_id="real-provider-decomposed-5case-fix1-20260718",
+        source_dir=(
+            "workspace/real-llm-stability-runs/"
+            "resume-ab-20260718-decomposed-5case-fix1/.agent"
+        ),
+        files=("real-llm-stability.json", "real-llm-stability.md"),
+        provider="real-provider",
+        validation=("provider", "schema", "generator", "audit"),
+        boundary=(
+            "Post-fix decomposed batch result: 5/5 strict success and audit 5/5. The fix "
+            "filters recipes with missing internal dependencies, canonicalizes vanilla "
+            "recipe references, and prevents recipe ID collisions. No Gradle build or "
+            "Minecraft runtime validation."
+        ),
+    ),
 )
 
 TEXT_EXTENSIONS = {".json", ".md", ".txt", ".html", ".log"}

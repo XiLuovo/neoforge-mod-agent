@@ -57,6 +57,19 @@ SUPPORTED_QUEST_TASK_TYPES = {
 SUPPORTED_TOOL_MATERIALS = {"wood", "stone", "copper", "iron", "diamond", "gold", "golden", "netherite", "ruby"}
 SUPPORTED_TOOL_TIERS = {"stone", "iron", "diamond", "netherite", "copper", "gold", "wood"}
 SUPPORTED_TOOL_TYPES = {"pickaxe", "axe", "shovel", "hoe"}
+VANILLA_RECIPE_REFERENCE_IDS = {
+    "bowl",
+    "bucket",
+    "cobblestone",
+    "diamond",
+    "gold_ingot",
+    "iron_ingot",
+    "paper",
+    "planks",
+    "redstone",
+    "stick",
+    "string",
+}
 SUPPORTED_ARMOR_TYPES = {"helmet", "chestplate", "leggings", "boots"}
 SUPPORTED_ARMOR_MATERIALS = {"leather", "chainmail", "chain", "copper", "iron", "diamond", "gold", "golden", "netherite", "ruby"}
 SUPPORTED_BLOCK_KINDS = {
@@ -1142,6 +1155,10 @@ def _decomposed_recipe_result_reference(value: object) -> object:
             candidate = value.get(key)
             if not _blank_decomposed_value(candidate):
                 return candidate
+    if isinstance(value, str) and ":" not in value:
+        normalized = value.strip().lower()
+        if normalized in VANILLA_RECIPE_REFERENCE_IDS:
+            return f"minecraft:{normalized}"
     return value
 
 

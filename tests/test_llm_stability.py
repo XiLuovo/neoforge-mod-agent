@@ -830,6 +830,100 @@ class LLMStabilityTests(unittest.TestCase):
         self.assertTrue(any("normalized to 'keys'" in warning for warning in warnings))
         self.assertTrue(any("id normalized to 'ruby_pickaxe'" in warning for warning in warnings))
 
+    def test_decomposed_drops_recipe_with_missing_internal_dependency(self) -> None:
+        feature_plan = {
+            "mod_id": "ruby_mod",
+            "features": [
+                {"type": "item", "id": "ruby"},
+                {
+                    "type": "recipe",
+                    "id": "ruby_helmet_recipe",
+                    "depends_on": ["ruby", "ruby_helmet"],
+                },
+            ],
+        }
+        features = [
+            {"type": "item", "id": "ruby", "display_name_en_us": "Ruby"},
+            {
+                "type": "recipe",
+                "id": "ruby_helmet_recipe",
+                "recipe_type": "shaped",
+                "pattern": ["###", "# #"],
+                "keys": {"#": "ruby"},
+                "result": "ruby_helmet",
+            },
+        ]
+
+        hardened, warnings = _harden_decomposed_composed_features(features, feature_plan)
+
+        self.assertEqual([feature["id"] for feature in hardened], ["ruby"])
+        self.assertTrue(any("missing internal dependency" in warning for warning in warnings))
+
+    def test_decomposed_recipe_canonicalizes_vanilla_stick_reference(self) -> None:
+        feature_plan = {
+            "mod_id": "ruby_mod",
+            "features": [
+                {"type": "item", "id": "ruby"},
+                {"type": "sword", "id": "ruby_sword"},
+                {
+                    "type": "recipe",
+                    "id": "ruby_sword_recipe",
+                    "depends_on": ["ruby", "ruby_sword"],
+                },
+            ],
+        }
+        features = [
+            {"type": "item", "id": "ruby"},
+            {"type": "sword", "id": "ruby_sword"},
+            {
+                "type": "recipe",
+                "id": "ruby_sword_recipe",
+                "recipe_type": "shaped",
+                "pattern": [" # ", " # ", " / "],
+                "keys": {"#": "ruby", "/": "stick"},
+                "result": "ruby_sword",
+            },
+        ]
+
+        hardened, _ = _harden_decomposed_composed_features(features, feature_plan)
+
+        recipe = next(feature for feature in hardened if feature["type"] == "recipe")
+        self.assertEqual(recipe["keys"]["/"], "minecraft:stick")
+
+    def test_decomposed_recipe_id_collision_keeps_unique_identifiers(self) -> None:
+        feature_plan = {
+            "mod_id": "ruby_mod",
+            "features": [
+                {"type": "item", "id": "ruby"},
+                {"type": "recipe", "id": "ruby_helmet_recipe", "depends_on": ["ruby"]},
+                {"type": "recipe", "id": "ruby_chestplate_recipe", "depends_on": ["ruby"]},
+            ],
+        }
+        features = [
+            {"type": "item", "id": "ruby"},
+            {
+                "type": "recipe",
+                "id": "ruby_helmet_recipe",
+                "recipe_type": "shapeless",
+                "ingredients": ["ruby"],
+                "result": "ruby",
+            },
+            {
+                "type": "recipe",
+                "id": "ruby_chestplate_recipe",
+                "recipe_type": "shapeless",
+                "ingredients": ["ruby"],
+                "result": "ruby",
+            },
+        ]
+
+        hardened, warnings = _harden_decomposed_composed_features(features, feature_plan)
+
+        recipe_ids = [feature["id"] for feature in hardened if feature["type"] == "recipe"]
+        self.assertEqual(len(recipe_ids), len(set(recipe_ids)))
+        self.assertIn("ruby_chestplate_recipe", recipe_ids)
+        self.assertTrue(any("recipe id collision" in warning for warning in warnings))
+
     def test_system_prompts_include_real_llm_modspec_contract(self) -> None:
         create_prompt = _build_system_prompt("zh_cn")
         modify_prompt = _build_modify_system_prompt("zh_cn")
