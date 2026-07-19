@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at_utc": "2026-07-18T08:32:32.170162+00:00",
+  "generated_at_utc": "2026-07-19T00:00:44.161403+00:00",
   "policy": "This directory contains sanitized snapshots of existing local run reports. It does not upgrade audit/build evidence to Minecraft runtime evidence.",
   "entries": [
     {
@@ -181,6 +181,32 @@
           "path": "real-provider-decomposed-5case-fix1-20260718/real-llm-stability.md",
           "bytes": 2208,
           "sha256": "12175a926147a3d7302ad194cc2c1f0097c62c8851d5ea20f4ed59bd1f0bed7e"
+        }
+      ],
+      "missing_files": []
+    },
+    {
+      "evidence_id": "real-provider-decomposed-13case-postfix-20260719",
+      "source_run": "workspace/real-llm-stability-runs/resume-decomposed-13case-postfix-20260719/.agent",
+      "provider": "real-provider",
+      "validation": [
+        "provider",
+        "schema",
+        "generator",
+        "audit"
+      ],
+      "boundary": "Post-fix decomposed 13-case result: 12/13 strict success; the unsupported ruby_realm_world_structure case remains an agent failure. Audit success does not guarantee full request semantics when warnings record ignored features or removed behavior. No Gradle build or Minecraft runtime validation.",
+      "status": "complete",
+      "files": [
+        {
+          "path": "real-provider-decomposed-13case-postfix-20260719/real-llm-stability.json",
+          "bytes": 51228,
+          "sha256": "ae699035c5bc385b63b2f1920130affac3f14f1129dee7e6b0ed83113815a69f"
+        },
+        {
+          "path": "real-provider-decomposed-13case-postfix-20260719/real-llm-stability.md",
+          "bytes": 4041,
+          "sha256": "f2692609f8521bb1a78fbd1691b440c0fffbc5d6643f730ae5888dfc53eb12bc"
         }
       ],
       "missing_files": []

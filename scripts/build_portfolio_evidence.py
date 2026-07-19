@@ -108,6 +108,22 @@ RUNS = (
             "Minecraft runtime validation."
         ),
     ),
+    EvidenceRun(
+        evidence_id="real-provider-decomposed-13case-postfix-20260719",
+        source_dir=(
+            "workspace/real-llm-stability-runs/"
+            "resume-decomposed-13case-postfix-20260719/.agent"
+        ),
+        files=("real-llm-stability.json", "real-llm-stability.md"),
+        provider="real-provider",
+        validation=("provider", "schema", "generator", "audit"),
+        boundary=(
+            "Post-fix decomposed 13-case result: 12/13 strict success; the unsupported "
+            "ruby_realm_world_structure case remains an agent failure. Audit success does "
+            "not guarantee full request semantics when warnings record ignored features or "
+            "removed behavior. No Gradle build or Minecraft runtime validation."
+        ),
+    ),
 )
 
 TEXT_EXTENSIONS = {".json", ".md", ".txt", ".html", ".log"}

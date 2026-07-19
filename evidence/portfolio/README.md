@@ -79,3 +79,14 @@ audit/build 证据不等于 Minecraft 客户端或服务端 runtime 验收。
 
 - `real-provider-decomposed-5case-fix1-20260718/real-llm-stability.json` — SHA-256 `f8c3f28c6a3cfd83cffc6158022db7101c9399ac9a384393d09fe1d54a304f0f`
 - `real-provider-decomposed-5case-fix1-20260718/real-llm-stability.md` — SHA-256 `12175a926147a3d7302ad194cc2c1f0097c62c8851d5ea20f4ed59bd1f0bed7e`
+
+## real-provider-decomposed-13case-postfix-20260719
+
+- Status: `complete`
+- Provider: `real-provider`
+- Source run: `workspace/real-llm-stability-runs/resume-decomposed-13case-postfix-20260719/.agent`
+- Validation: `provider, schema, generator, audit`
+- Boundary: Post-fix decomposed 13-case result: 12/13 strict success; the unsupported ruby_realm_world_structure case remains an agent failure. Audit success does not guarantee full request semantics when warnings record ignored features or removed behavior. No Gradle build or Minecraft runtime validation.
+
+- `real-provider-decomposed-13case-postfix-20260719/real-llm-stability.json` — SHA-256 `ae699035c5bc385b63b2f1920130affac3f14f1129dee7e6b0ed83113815a69f`
+- `real-provider-decomposed-13case-postfix-20260719/real-llm-stability.md` — SHA-256 `f2692609f8521bb1a78fbd1691b440c0fffbc5d6643f730ae5888dfc53eb12bc`

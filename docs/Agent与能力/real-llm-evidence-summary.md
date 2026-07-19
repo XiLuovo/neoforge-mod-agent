@@ -1,6 +1,6 @@
 # 真实 LLM 证据总览
 
-这页汇总真实 provider 稳定性实验的结论，用于项目说明和展示复盘。2026-07-18 已重新运行 5-case full-schema / decomposed A/B，并将两组 batch 与 decomposed 单 case retry 的脱敏报告纳入 `evidence/portfolio/`。2026-06-26 的 decomposed 13-case 数字仍属于历史实验记录，原始 run 未进入当前 checkout，因此继续标为待复验。
+这页汇总真实 provider 稳定性实验的结论，用于项目说明和展示复盘。2026-07-18 已重新运行 5-case full-schema / decomposed A/B；2026-07-19 又完成 post-fix decomposed 13-case。两轮当前实验的脱敏 raw report 均已纳入 `evidence/portfolio/`，更早的 2026-06-26 数字只作历史对照。
 
 ## 一句话结论
 
@@ -9,7 +9,7 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 当前对外统计口径分层说明：
 
 - 当前 5-case A/B：修复后的 decomposed batch `5/5` strict + audit；full-schema batch `5/5` strict + audit。decomposed total tokens `6,917`，full-schema `253,819`，约降 `97.3%`；平均延迟约 `10.9s` 对 `46.0s`。修复前的 `4/5` batch 失败仍作为独立 evidence 保留。
-- decomposed 13-case smoke：`12/13` strict real LLM success，audit `12/13`，fallback `0`，total tokens `22,904`；唯一失败是 `ruby_realm_world_structure`，属于 dimension / biome / structure / loot 复合世界生成的 planner/schema 覆盖边界。
+- 当前 decomposed 13-case：`12/13` strict real LLM success，成功 case audit `12/12`，fallback `0`，total tokens `29,497`，平均延迟 `33.1s`；唯一失败是 `ruby_realm_world_structure`。部分成功 case 仍有 ignored feature、removed behavior 或 progression warning，因此 strict + audit 不等于完整语义覆盖。
 - runtime 边界：没有传入 runtime evidence 的 case 只能记为 runtime unverified，不能表述成 Minecraft 客户端或服务端内验证通过。
 - build 边界：代表性 real-provider generated workspaces 有 Gradle build follow-up；额外历史 3 个 build case 中 provider/schema/audit 全部通过，依赖重试后 `3/3` strict generated projects 可 Gradle build。
 
@@ -20,6 +20,7 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 | `resume-ab-20260718-decomposed-5case-fix1` | 2026-07-18 | real provider, decomposed, audit, no build, no runtime evidence | `5/5` strict + audit；total tokens `6,917`；平均延迟 `10.9s` | 修复后 decomposed planner 的当前可复验结果 |
 | `resume-ab-20260718-fullschema-5case` | 2026-07-18 | real provider, full-schema, audit, no build, no runtime evidence | `5/5` strict + audit；total tokens `253,819`；平均延迟 `46.0s` | 同条件 full-schema 对照 |
 | `resume-ab-20260718-decomposed-5case` | 2026-07-18 | real provider, decomposed, audit, no build, no runtime evidence | 修复前 `4/5`；`basic_ruby` 单独 retry `1/1` | 失败→修复前基线；不能被 retry 改写 |
+| `resume-decomposed-13case-postfix-20260719` | 2026-07-19 | real provider, decomposed, audit, no build, no runtime evidence | `12/13` strict；成功 case audit `12/12`；fallback `0`；total tokens `29,497` | 当前可复验的 13-case 稳定性、unsupported capability 和语义 warning 边界 |
 | `decomposed-planner-5case-ab` | 2026-06-26 | historical summary only; raw run unavailable | 历史记录：decomposed `5/5`、full-schema `5/5*`；total tokens 约降 `97.7%` | 仅作历史对照，不作为当前可复验主指标 |
 | `decomposed-real-llm-13case-smoke` | 2026-06-26 | real provider, decomposed planner, audit, no build, no runtime evidence | `12/13` strict real LLM success；audit `12/13`；fallback `0`；total tokens `22,904` | decomposed planner 在垂直领域 13-case 集合上的真实 provider 稳定性和覆盖边界 |
 | `real-llm-13case-runtime-upgrade` | 2026-06-05 | real provider, audit, no build, no runtime evidence | `12/13` strict real LLM success；`1` schema failure；`13` runtime unverified | 真实 provider 13 case 稳定性、失败分类、runtime 证据边界 |
@@ -59,7 +60,7 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 
 历史摘要记录 decomposed `5/5`、full-schema `5/5*`，total tokens `254,310 -> 5,875`、平均延迟 `44.7s -> 25.1s`。对应 raw run 不在当前 checkout，因此这些数字只作演进对照，不作为当前公开主指标。
 
-## Decomposed 13-Case Smoke
+## 当前可复验的 Decomposed 13-Case（2026-07-19）
 
 运行配置：
 
@@ -78,15 +79,18 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 |---|---:|
 | Target cases | `13` |
 | Strict real LLM success | `12/13` |
-| Audit success | `12/13` |
-| Representative Gradle build smoke | `2/2` |
+| Audit success | `12/12 attempted` |
 | Fallback used | `0` |
-| Total tokens | `22,904` |
-| Average latency on successful cases | `46.4s` |
+| Total tokens | `29,497` |
+| Average latency | `33.1s` |
 
 通过 case 包括 `basic_ruby`、`ruby_charm_behavior`、`speed_crystal_behavior`、`ruby_apple_effect`、`ruby_sword_ignite`、`ruby_pickaxe_tool`、`ruby_tool_set`、`ruby_armor_set`、`ruby_block_variants`、`ruby_ore_worldgen`、`ruby_goblin_entity` 和 `progression_gameplay_loop`。
 
-失败 case 是 `ruby_realm_world_structure`。观察到的原因是 decomposed planner 当前 feature-plan 路径没有完整覆盖或保留 `dimension`、`biome`、`world_feature`、`structure`、`loot_pool` 复合世界生成能力，后续规范化 ModSpec 时围绕 ore drop reference 产生不合法结构。这是 planner/schema 覆盖边界，不是 provider timeout，不是 JSON mode 兼容问题，也不是 Minecraft runtime 失败。
+失败 case 是 `ruby_realm_world_structure`。模型返回的 `dimension`、`biome`、`world_feature`、`structure` 和 `loot_pool` 均不在 decomposed v1 的受支持 feature type 集合中，确定性 planner 将其忽略后没有剩余可执行 feature，因此以 `agent_failure` 结束。它没有进入 audit；这不是 provider timeout、schema JSON 解析错误或 Minecraft runtime 失败。
+
+成功 case 也必须结合 warning 解读：`ruby_sword_ignite` 曾移除空 behavior，`ruby_block_variants` 的 block feature 被 decomposed v1 忽略，部分 progression 输出存在 missing links、unknown references 或缺少 quest chain 的提示。因此这轮 `12/13` 证明真实 provider 输出能够进入受控 ModSpec/generator/audit 流程，但不能单独证明 12 个自然语言请求都获得了完整语义覆盖。
+
+脱敏冻结报告见 [Portfolio Evidence](../../evidence/portfolio/README.md)。
 
 ## 13 Case Runtime Upgrade Run
 

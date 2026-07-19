@@ -42,14 +42,14 @@ py -3.11 -m agent.cli showcase --run-name public-build-smoke --llm-provider mock
 
 最近一次本地 build smoke `public-build-smoke-clean` 结果：showcase 5 passed / 0 failed / 1 skipped（quality gate 未请求），doctor 22 pass / 0 warning / 0 fail，development e2e 2/2 success，audit 2/2，Gradle build 2/2，生成 `progression_mod-0.1.0.jar` 和 `ruby_mod-0.1.0.jar`。该结果证明 generated workspace 的 Gradle build gate 通过，仍不等于 Minecraft runtime 自动验收。脱敏冻结报告见 [Portfolio Evidence](../../evidence/portfolio/README.md)。
 
-真实 provider 证据建议作为单独一层展示，不和 mock / CI smoke 混写。2026-07-18 的 5-case A/B 已有脱敏 raw report；2026-06-26 的 13-case decomposed 结果仍只有历史摘要：
+真实 provider 证据建议作为单独一层展示，不和 mock / CI smoke 混写。2026-07-18 的 5-case A/B 与 2026-07-19 的 post-fix decomposed 13-case 均已有脱敏 raw report：
 
 | Evidence | Result | 展示边界 |
 |---|---:|---|
 | Current planner A/B after hardening | full-schema batch `5/5` strict + audit；decomposed post-fix batch `5/5` strict + audit；total tokens `253,819 -> 6,917`，约降 `97.3%`，平均延迟 `46.0s -> 10.9s` | 修复前 `4/5` 失败报告仍保留；结果是 audit-level，无 build/runtime；progression 等语义警告仍需单独说明 |
 | Pre-fix planner A/B | decomposed batch `4/5`，失败 case retry `1/1` | 失败由 unsupported dependency、vanilla namespace 和 recipe ID collision 暴露；retry 不覆盖 batch 失败 |
 | Historical planner A/B | 历史摘要：decomposed `5/5`、full-schema `5/5*`，total tokens 约降 `97.7%` | raw run 不在当前 checkout，只作历史演进对照 |
-| Decomposed 13-case smoke | `12/13` strict real LLM success，audit `12/13`，fallback `0`，total tokens `22,904` | 唯一失败 `ruby_realm_world_structure` 是 dimension / biome / structure / loot 复合世界生成的 planner/schema 覆盖边界 |
+| Current decomposed 13-case | `12/13` strict real LLM success，成功 case audit `12/12`，fallback `0`，total tokens `29,497` | `ruby_realm_world_structure` 因全部 feature type unsupported 而失败；若 warning 显示 ignored feature、removed behavior 或 progression 缺口，audit success 不能解释为完整语义覆盖 |
 | Representative build follow-up | 代表性 real-provider generated workspaces 有 Gradle build smoke 和 jar evidence | 只能证明 workspace 级 build gate，不证明 Minecraft runtime 自动验收 |
 
 推荐讲法：mock 证明工程链路可复现；real provider 证明模型输出能进入 ModSpec、deterministic generator 和 audit gate；build follow-up 证明代表性 workspace 可编译；runtime 需要额外 manual runtime evidence。
