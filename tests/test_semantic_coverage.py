@@ -13,6 +13,24 @@ from neoforge_agent.semantic_coverage import (
 
 
 class SemanticCoverageTests(unittest.TestCase):
+    def test_sword_on_hit_ignite_matches_sword_ignite_category(self) -> None:
+        result = evaluate_semantic_coverage(
+            expected_features=["ruby_sword"],
+            expected_categories=["sword", "behavior", "sword_ignite"],
+            modspec={
+                "features": [
+                    {
+                        "type": "sword",
+                        "id": "ruby_sword",
+                        "on_hit": {"type": "ignite", "seconds": 5},
+                    }
+                ]
+            },
+        )
+
+        self.assertEqual(result.missing_expected_categories, [])
+        self.assertTrue(result.semantic_success)
+
     def test_feature_match_does_not_hide_missing_behavior_category(self) -> None:
         result = evaluate_semantic_coverage(
             expected_features=["ruby_sword"],

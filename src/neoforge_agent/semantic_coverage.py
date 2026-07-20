@@ -233,7 +233,7 @@ def categories_from_modspec(data: dict[str, Any], *, mode: str) -> set[str]:
         on_hit = feature.get("on_hit")
         if isinstance(on_hit, dict):
             categories.add("behavior")
-            raw_on_hit_type = normalize_category(str(on_hit.get("type", "")))
+            raw_on_hit_type = _normalize_category_token(str(on_hit.get("type", "")))
             if raw_on_hit_type == "ignite":
                 categories.add("sword_ignite")
             elif raw_on_hit_type:
@@ -253,7 +253,7 @@ def categories_from_modspec(data: dict[str, Any], *, mode: str) -> set[str]:
 
 
 def normalize_category(value: str) -> str:
-    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+    normalized = _normalize_category_token(value)
     aliases = {
         "food_effects": "food_effect",
         "on_hit_ignite": "sword_ignite",
@@ -270,6 +270,10 @@ def normalize_category(value: str) -> str:
         "guide_book": "guidebook",
     }
     return aliases.get(normalized, normalized)
+
+
+def _normalize_category_token(value: str) -> str:
+    return value.strip().lower().replace("-", "_").replace(" ", "_")
 
 
 def _feature_dicts_from_modspec(data: dict[str, Any]) -> list[dict[str, Any]]:
