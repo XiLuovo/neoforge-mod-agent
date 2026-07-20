@@ -1,0 +1,153 @@
+{
+  "schema_version": "semantic-coverage/v1",
+  "source_run_id": "resume-ab-20260718-fullschema-5case",
+  "cases": [
+    {
+      "id": "basic_ruby",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-ab-20260718-fullschema-5case\\runs\\01-basic_ruby-strict",
+      "expected_features": [
+        "ruby"
+      ],
+      "matched_expected_features": [
+        "ruby"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "item"
+      ],
+      "matched_expected_categories": [
+        "item"
+      ],
+      "missing_expected_categories": [],
+      "semantic_success": true,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": []
+    },
+    {
+      "id": "ruby_charm_behavior",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-ab-20260718-fullschema-5case\\runs\\02-ruby_charm_behavior-strict",
+      "expected_features": [
+        "ruby_charm"
+      ],
+      "matched_expected_features": [
+        "ruby_charm"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "item",
+        "behavior",
+        "right_click_heal"
+      ],
+      "matched_expected_categories": [
+        "item",
+        "behavior",
+        "right_click_heal"
+      ],
+      "missing_expected_categories": [],
+      "semantic_success": true,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": []
+    },
+    {
+      "id": "speed_crystal_behavior",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-ab-20260718-fullschema-5case\\runs\\03-speed_crystal_behavior-strict",
+      "expected_features": [
+        "speed_crystal"
+      ],
+      "matched_expected_features": [
+        "speed_crystal"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "item",
+        "behavior",
+        "right_click_effect"
+      ],
+      "matched_expected_categories": [
+        "item",
+        "behavior",
+        "right_click_effect"
+      ],
+      "missing_expected_categories": [],
+      "semantic_success": true,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": []
+    },
+    {
+      "id": "ruby_apple_effect",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-ab-20260718-fullschema-5case\\runs\\04-ruby_apple_effect-strict",
+      "expected_features": [
+        "ruby_apple"
+      ],
+      "matched_expected_features": [
+        "ruby_apple"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "food",
+        "behavior",
+        "food_effect"
+      ],
+      "matched_expected_categories": [
+        "food",
+        "behavior",
+        "food_effect"
+      ],
+      "missing_expected_categories": [],
+      "semantic_success": true,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": []
+    },
+    {
+      "id": "ruby_sword_ignite",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-ab-20260718-fullschema-5case\\runs\\05-ruby_sword_ignite-strict",
+      "expected_features": [
+        "ruby_sword"
+      ],
+      "matched_expected_features": [
+        "ruby_sword"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "sword",
+        "behavior",
+        "sword_ignite"
+      ],
+      "matched_expected_categories": [
+        "sword",
+        "behavior"
+      ],
+      "missing_expected_categories": [
+        "sword_ignite"
+      ],
+      "semantic_success": false,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": []
+    }
+  ],
+  "metrics": {
+    "total_cases": 5,
+    "semantic_success_count": 4,
+    "semantic_success_rate": 0.8,
+    "expected_features_total": 5,
+    "expected_features_matched": 5,
+    "expected_feature_match_rate": 1.0,
+    "expected_categories_total": 13,
+    "expected_categories_matched": 12,
+    "expected_category_match_rate": 0.9231,
+    "ignored_feature_warning_count": 0,
+    "removed_behavior_warning_count": 0,
+    "semantic_warning_count": 0
+  },
+  "boundary": "Semantic coverage compares expected features/categories with the generated ModSpec. It does not prove Gradle build or Minecraft runtime behavior."
+}

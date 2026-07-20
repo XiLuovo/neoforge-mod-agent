@@ -51,6 +51,46 @@ class RealLLMStabilityTests(unittest.TestCase):
             self.assertTrue(result.real_llm_stability_json_path.exists())
             self.assertTrue(result.real_llm_stability_md_path.exists())
 
+    def test_real_llm_stability_separates_strict_and_semantic_success(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
+            config = test_config(Path(tmp))
+            cases_path = Path(tmp) / "semantic-cases.json"
+            cases_path.write_text(
+                json.dumps(
+                    {
+                        "cases": [
+                            {
+                                "id": "semantic_mismatch",
+                                "mode": "generate",
+                                "request": "Create a ruby mod with ruby.",
+                                "expected_features": ["not_generated"],
+                                "expected_categories": ["item"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = RealLLMStabilityRunner(config).run(
+                run_name="unit-real-llm-semantic-mismatch",
+                cases_path=cases_path,
+                llm_provider="mock",
+                limit=1,
+                run_build=False,
+                run_audit=True,
+                fallback_probe=False,
+            )
+
+            self.assertEqual(result.metrics["strict_success_count"], 1)
+            self.assertEqual(result.metrics["semantic_success_count"], 0)
+            self.assertTrue(result.cases[0].strict_success)
+            self.assertFalse(result.cases[0].semantic_success)
+            self.assertEqual(result.cases[0].missing_expected_features, ["not_generated"])
+            markdown = result.real_llm_stability_md_path.read_text(encoding="utf-8")
+            self.assertIn("semantic success: `0`", markdown)
+            self.assertIn("missing expected features: not_generated", markdown)
+
     def test_real_llm_stability_attaches_runtime_evidence(self) -> None:
         with tempfile.TemporaryDirectory(prefix="neoforge-agent-", dir=TMP_ROOT) as tmp:
             config = test_config(Path(tmp))

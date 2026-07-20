@@ -8,8 +8,8 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 
 当前对外统计口径分层说明：
 
-- 当前 5-case A/B：修复后的 decomposed batch `5/5` strict + audit；full-schema batch `5/5` strict + audit。decomposed total tokens `6,917`，full-schema `253,819`，约降 `97.3%`；平均延迟约 `10.9s` 对 `46.0s`。修复前的 `4/5` batch 失败仍作为独立 evidence 保留。
-- 当前 decomposed 13-case：`12/13` strict real LLM success，成功 case audit `12/12`，fallback `0`，total tokens `29,497`，平均延迟 `33.1s`；唯一失败是 `ruby_realm_world_structure`。部分成功 case 仍有 ignored feature、removed behavior 或 progression warning，因此 strict + audit 不等于完整语义覆盖。
+- 当前 5-case A/B：修复后的 decomposed batch `5/5` strict + audit、semantic `3/5`；full-schema batch `5/5` strict + audit、semantic `4/5`。decomposed total tokens `6,917`，full-schema `253,819`，约降 `97.3%`；平均延迟约 `10.9s` 对 `46.0s`。修复前的 `4/5` batch 失败仍作为独立 evidence 保留。
+- 当前 decomposed 13-case：`12/13` strict real LLM success，成功 case audit `12/12`，semantic `7/13`，feature match `15/33`，category match `22/37`，fallback `0`，total tokens `29,497`，平均延迟 `33.1s`；唯一 strict 失败是 `ruby_realm_world_structure`。这说明流程稳定性和需求语义覆盖必须分开统计。
 - runtime 边界：没有传入 runtime evidence 的 case 只能记为 runtime unverified，不能表述成 Minecraft 客户端或服务端内验证通过。
 - build 边界：代表性 real-provider generated workspaces 有 Gradle build follow-up；额外历史 3 个 build case 中 provider/schema/audit 全部通过，依赖重试后 `3/3` strict generated projects 可 Gradle build。
 
@@ -20,7 +20,7 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 | `resume-ab-20260718-decomposed-5case-fix1` | 2026-07-18 | real provider, decomposed, audit, no build, no runtime evidence | `5/5` strict + audit；total tokens `6,917`；平均延迟 `10.9s` | 修复后 decomposed planner 的当前可复验结果 |
 | `resume-ab-20260718-fullschema-5case` | 2026-07-18 | real provider, full-schema, audit, no build, no runtime evidence | `5/5` strict + audit；total tokens `253,819`；平均延迟 `46.0s` | 同条件 full-schema 对照 |
 | `resume-ab-20260718-decomposed-5case` | 2026-07-18 | real provider, decomposed, audit, no build, no runtime evidence | 修复前 `4/5`；`basic_ruby` 单独 retry `1/1` | 失败→修复前基线；不能被 retry 改写 |
-| `resume-decomposed-13case-postfix-20260719` | 2026-07-19 | real provider, decomposed, audit, no build, no runtime evidence | `12/13` strict；成功 case audit `12/12`；fallback `0`；total tokens `29,497` | 当前可复验的 13-case 稳定性、unsupported capability 和语义 warning 边界 |
+| `resume-decomposed-13case-postfix-20260719` | 2026-07-19 | real provider, decomposed, audit, no build, no runtime evidence | `12/13` strict；audit `12/12`；semantic `7/13`；feature `15/33`；category `22/37`；fallback `0` | 当前可复验的 13-case 流程稳定性、unsupported capability 和语义 warning 边界 |
 | `decomposed-planner-5case-ab` | 2026-06-26 | historical summary only; raw run unavailable | 历史记录：decomposed `5/5`、full-schema `5/5*`；total tokens 约降 `97.7%` | 仅作历史对照，不作为当前可复验主指标 |
 | `decomposed-real-llm-13case-smoke` | 2026-06-26 | real provider, decomposed planner, audit, no build, no runtime evidence | `12/13` strict real LLM success；audit `12/13`；fallback `0`；total tokens `22,904` | decomposed planner 在垂直领域 13-case 集合上的真实 provider 稳定性和覆盖边界 |
 | `real-llm-13case-runtime-upgrade` | 2026-06-05 | real provider, audit, no build, no runtime evidence | `12/13` strict real LLM success；`1` schema failure；`13` runtime unverified | 真实 provider 13 case 稳定性、失败分类、runtime 证据边界 |
@@ -47,6 +47,8 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 
 `Input Tokens`、`Output Tokens` 和 `Total Tokens` 均来自 provider usage 字段，不是按 prompt 文本估算。修复前 decomposed batch 的 `basic_ruby` 因生成无效 ModSpec 归为 `agent_failure`；修复后同一 5-case 集合达到 `5/5`。修复后报告仍可能记录 progression link 等语义警告，因此这里证明的是 strict planning + audit 稳定性，不是所有自然语言语义都已 runtime 验收。
 
+离线 semantic coverage 刷新复用了 evaluator 的 feature/category 匹配规则，不重新调用 provider。当前 post-fix decomposed 为 feature `5/5`、category `9/13`、semantic `3/5`；full-schema 为 feature `5/5`、category `12/13`、semantic `4/5`。semantic success 是独立指标，不改写 strict success。
+
 关键结论：
 
 - decomposed post-fix 将输入 token 从 `246,052` 降到 `4,715`，约降 `98.1%`。
@@ -55,6 +57,17 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 - 修复前 `4/5`、修复后 `5/5` 的并列证据说明：prompt 拆分带来显著成本/延迟收益，同时确定性 hardening 修复了由 unsupported dependency、vanilla namespace 和 recipe ID collision 造成的失败。
 
 脱敏冻结报告见 [Portfolio Evidence](../../evidence/portfolio/README.md)。
+
+已有 stability report 可离线刷新 semantic coverage，不会重新调用 provider：
+
+```powershell
+$env:PYTHONPATH = (Resolve-Path .\src)
+py -3.11 scripts/refresh_real_llm_semantics.py `
+  --report workspace/real-llm-stability-runs/<run>/.agent/real-llm-stability.json `
+  --cases examples/real_llm_stability_cases.json
+```
+
+脚本会在同一 `.agent/` 目录写出 `semantic-coverage.json` 和 `semantic-coverage.md`。semantic coverage 复用 evaluator 的 feature/category 规则；它不等于 build 或 Minecraft runtime 验收。
 
 ## 历史 5-Case A/B（2026-06-26，待复验）
 
@@ -83,6 +96,9 @@ mock 证明工程链路可复现；真实 LLM 实验证明 provider 输出可以
 | Fallback used | `0` |
 | Total tokens | `29,497` |
 | Average latency | `33.1s` |
+| Semantic success | `7/13` |
+| Expected feature match | `15/33` |
+| Expected category match | `22/37` |
 
 通过 case 包括 `basic_ruby`、`ruby_charm_behavior`、`speed_crystal_behavior`、`ruby_apple_effect`、`ruby_sword_ignite`、`ruby_pickaxe_tool`、`ruby_tool_set`、`ruby_armor_set`、`ruby_block_variants`、`ruby_ore_worldgen`、`ruby_goblin_entity` 和 `progression_gameplay_loop`。
 

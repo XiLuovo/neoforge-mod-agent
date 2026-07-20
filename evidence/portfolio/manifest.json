@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at_utc": "2026-07-19T00:00:44.161403+00:00",
+  "generated_at_utc": "2026-07-19T02:40:07.255547+00:00",
   "policy": "This directory contains sanitized snapshots of existing local run reports. It does not upgrade audit/build evidence to Minecraft runtime evidence.",
   "entries": [
     {
@@ -103,6 +103,16 @@
           "path": "real-provider-decomposed-5case-20260718/real-llm-stability.md",
           "bytes": 2405,
           "sha256": "9ec175c29ae03db39c3a605b008aed2639dd80d68467742edd3223b1a64ebfae"
+        },
+        {
+          "path": "real-provider-decomposed-5case-20260718/semantic-coverage.json",
+          "bytes": 4907,
+          "sha256": "18b447358f0836d594d8dab1d42fa95934b0033cd2a61a35b20dc859a14b2afe"
+        },
+        {
+          "path": "real-provider-decomposed-5case-20260718/semantic-coverage.md",
+          "bytes": 996,
+          "sha256": "348da50de1b532903072a4a850076a6ad82b3a28a2aca8a0b0ca9763fb918f1a"
         }
       ],
       "missing_files": []
@@ -129,6 +139,16 @@
           "path": "real-provider-fullschema-5case-20260718/real-llm-stability.md",
           "bytes": 2173,
           "sha256": "d677ccf4cd00dc3f1a0639da06d931508e4bafcc7fd637b64e7297beac5df008"
+        },
+        {
+          "path": "real-provider-fullschema-5case-20260718/semantic-coverage.json",
+          "bytes": 4490,
+          "sha256": "92e8953e12d68940c56f4c70b28ede72555d4d451a455f11d6de1ba8c6e369ed"
+        },
+        {
+          "path": "real-provider-fullschema-5case-20260718/semantic-coverage.md",
+          "bytes": 763,
+          "sha256": "b1f24391c99b436488e2284f89b459b17f50cea43a4438634777f01c5eacd3c6"
         }
       ],
       "missing_files": []
@@ -181,6 +201,16 @@
           "path": "real-provider-decomposed-5case-fix1-20260718/real-llm-stability.md",
           "bytes": 2208,
           "sha256": "12175a926147a3d7302ad194cc2c1f0097c62c8851d5ea20f4ed59bd1f0bed7e"
+        },
+        {
+          "path": "real-provider-decomposed-5case-fix1-20260718/semantic-coverage.json",
+          "bytes": 4711,
+          "sha256": "91829725634890c61a7fa8ec717eae37ac620aac1c422448b01d379b8e8cef45"
+        },
+        {
+          "path": "real-provider-decomposed-5case-fix1-20260718/semantic-coverage.md",
+          "bytes": 872,
+          "sha256": "79e62c44890f162b558c547d5d1c296257f6b693bdee49b2fa9750c0d540792a"
         }
       ],
       "missing_files": []
@@ -207,6 +237,16 @@
           "path": "real-provider-decomposed-13case-postfix-20260719/real-llm-stability.md",
           "bytes": 4041,
           "sha256": "f2692609f8521bb1a78fbd1691b440c0fffbc5d6643f730ae5888dfc53eb12bc"
+        },
+        {
+          "path": "real-provider-decomposed-13case-postfix-20260719/semantic-coverage.json",
+          "bytes": 13609,
+          "sha256": "e0f8f4c68df1f51b609411b56d529f4d2cb2412445e5607c862c2f6f5441b415"
+        },
+        {
+          "path": "real-provider-decomposed-13case-postfix-20260719/semantic-coverage.md",
+          "bytes": 2078,
+          "sha256": "a0eb2e48f7f0827c2dcf163e9c88e4160e06e3db79947950eca49afc520db607"
         }
       ],
       "missing_files": []

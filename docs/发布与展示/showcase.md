@@ -46,10 +46,10 @@ py -3.11 -m agent.cli showcase --run-name public-build-smoke --llm-provider mock
 
 | Evidence | Result | 展示边界 |
 |---|---:|---|
-| Current planner A/B after hardening | full-schema batch `5/5` strict + audit；decomposed post-fix batch `5/5` strict + audit；total tokens `253,819 -> 6,917`，约降 `97.3%`，平均延迟 `46.0s -> 10.9s` | 修复前 `4/5` 失败报告仍保留；结果是 audit-level，无 build/runtime；progression 等语义警告仍需单独说明 |
+| Current planner A/B after hardening | full-schema strict `5/5`、semantic `4/5`；decomposed strict `5/5`、semantic `3/5`；total tokens `253,819 -> 6,917`，约降 `97.3%`，平均延迟 `46.0s -> 10.9s` | 修复前 `4/5` 失败报告仍保留；strict、semantic、build/runtime 分层展示 |
 | Pre-fix planner A/B | decomposed batch `4/5`，失败 case retry `1/1` | 失败由 unsupported dependency、vanilla namespace 和 recipe ID collision 暴露；retry 不覆盖 batch 失败 |
 | Historical planner A/B | 历史摘要：decomposed `5/5`、full-schema `5/5*`，total tokens 约降 `97.7%` | raw run 不在当前 checkout，只作历史演进对照 |
-| Current decomposed 13-case | `12/13` strict real LLM success，成功 case audit `12/12`，fallback `0`，total tokens `29,497` | `ruby_realm_world_structure` 因全部 feature type unsupported 而失败；若 warning 显示 ignored feature、removed behavior 或 progression 缺口，audit success 不能解释为完整语义覆盖 |
+| Current decomposed 13-case | strict `12/13`，audit `12/12`，semantic `7/13`，feature `15/33`，category `22/37`，fallback `0` | `ruby_realm_world_structure` 因全部 feature type unsupported 而失败；semantic coverage 暴露其余 ignored feature / removed behavior / progression 缺口 |
 | Representative build follow-up | 代表性 real-provider generated workspaces 有 Gradle build smoke 和 jar evidence | 只能证明 workspace 级 build gate，不证明 Minecraft runtime 自动验收 |
 
 推荐讲法：mock 证明工程链路可复现；real provider 证明模型输出能进入 ModSpec、deterministic generator 和 audit gate；build follow-up 证明代表性 workspace 可编译；runtime 需要额外 manual runtime evidence。

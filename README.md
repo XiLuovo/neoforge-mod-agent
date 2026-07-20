@@ -19,8 +19,8 @@ Natural language
 | --- | --- | --- |
 | Offline development E2E | mock + decomposed planner：2/2 success，audit 2/2，repeat modify 1/1 | 证明离线工程链路可复现，不证明真实 provider |
 | Build showcase | 5 passed / 0 failed / 1 skipped（quality gate 未请求）；development E2E Gradle build 2/2 | 证明 generated workspace 可编译，不证明游戏内行为 |
-| Real-provider planner A/B | post-fix decomposed 5/5 strict + audit；full-schema 5/5；total tokens 约降 97.3%（253,819 → 6,917） | pre-fix 4/5 失败报告仍保留；progression 等语义警告、无 build/runtime |
-| Real-provider 13-case | decomposed `12/13` strict；成功 case audit `12/12`；fallback 0 | 唯一失败为 unsupported realm/structure 复合能力；audit success 不保证完整语义覆盖；无 build/runtime |
+| Real-provider planner A/B | post-fix decomposed `5/5` strict + audit、semantic `3/5`；full-schema `5/5` strict + audit、semantic `4/5`；total tokens 约降 97.3%（253,819 → 6,917） | pre-fix 4/5 失败报告仍保留；semantic 与 strict 分开；无 build/runtime |
+| Real-provider 13-case | decomposed `12/13` strict；audit `12/12`；semantic `7/13`；feature `15/33`；category `22/37` | 唯一 strict 失败为 unsupported realm/structure 复合能力；无 build/runtime；semantic 不等于 runtime |
 | Manual Minecraft runtime | 4/4 checked，4 passed，0 failed / blocked / unverified | 证明实际进入 NeoForge 客户端检查；包括 Y<0 深板岩层自然生成复验 |
 
 - 脱敏冻结的 eval/build/real-provider 报告：[Portfolio Evidence](evidence/portfolio/README.md)

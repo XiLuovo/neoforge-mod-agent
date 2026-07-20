@@ -46,6 +46,8 @@ audit/build 证据不等于 Minecraft 客户端或服务端 runtime 验收。
 
 - `real-provider-decomposed-5case-20260718/real-llm-stability.json` — SHA-256 `88f4c0613736f5117f8af2c869a9575dba67187ac829a09b9eb398329d826a2a`
 - `real-provider-decomposed-5case-20260718/real-llm-stability.md` — SHA-256 `9ec175c29ae03db39c3a605b008aed2639dd80d68467742edd3223b1a64ebfae`
+- `real-provider-decomposed-5case-20260718/semantic-coverage.json` — SHA-256 `18b447358f0836d594d8dab1d42fa95934b0033cd2a61a35b20dc859a14b2afe`
+- `real-provider-decomposed-5case-20260718/semantic-coverage.md` — SHA-256 `348da50de1b532903072a4a850076a6ad82b3a28a2aca8a0b0ca9763fb918f1a`
 
 ## real-provider-fullschema-5case-20260718
 
@@ -57,6 +59,8 @@ audit/build 证据不等于 Minecraft 客户端或服务端 runtime 验收。
 
 - `real-provider-fullschema-5case-20260718/real-llm-stability.json` — SHA-256 `11a66e9add7e4730dc5e9306477d405d416e153a44d469ef0919b840fa83d359`
 - `real-provider-fullschema-5case-20260718/real-llm-stability.md` — SHA-256 `d677ccf4cd00dc3f1a0639da06d931508e4bafcc7fd637b64e7297beac5df008`
+- `real-provider-fullschema-5case-20260718/semantic-coverage.json` — SHA-256 `92e8953e12d68940c56f4c70b28ede72555d4d451a455f11d6de1ba8c6e369ed`
+- `real-provider-fullschema-5case-20260718/semantic-coverage.md` — SHA-256 `b1f24391c99b436488e2284f89b459b17f50cea43a4438634777f01c5eacd3c6`
 
 ## real-provider-decomposed-basic-retry-20260718
 
@@ -79,6 +83,8 @@ audit/build 证据不等于 Minecraft 客户端或服务端 runtime 验收。
 
 - `real-provider-decomposed-5case-fix1-20260718/real-llm-stability.json` — SHA-256 `f8c3f28c6a3cfd83cffc6158022db7101c9399ac9a384393d09fe1d54a304f0f`
 - `real-provider-decomposed-5case-fix1-20260718/real-llm-stability.md` — SHA-256 `12175a926147a3d7302ad194cc2c1f0097c62c8851d5ea20f4ed59bd1f0bed7e`
+- `real-provider-decomposed-5case-fix1-20260718/semantic-coverage.json` — SHA-256 `91829725634890c61a7fa8ec717eae37ac620aac1c422448b01d379b8e8cef45`
+- `real-provider-decomposed-5case-fix1-20260718/semantic-coverage.md` — SHA-256 `79e62c44890f162b558c547d5d1c296257f6b693bdee49b2fa9750c0d540792a`
 
 ## real-provider-decomposed-13case-postfix-20260719
 
@@ -90,3 +96,5 @@ audit/build 证据不等于 Minecraft 客户端或服务端 runtime 验收。
 
 - `real-provider-decomposed-13case-postfix-20260719/real-llm-stability.json` — SHA-256 `ae699035c5bc385b63b2f1920130affac3f14f1129dee7e6b0ed83113815a69f`
 - `real-provider-decomposed-13case-postfix-20260719/real-llm-stability.md` — SHA-256 `f2692609f8521bb1a78fbd1691b440c0fffbc5d6643f730ae5888dfc53eb12bc`
+- `real-provider-decomposed-13case-postfix-20260719/semantic-coverage.json` — SHA-256 `e0f8f4c68df1f51b609411b56d529f4d2cb2412445e5607c862c2f6f5441b415`
+- `real-provider-decomposed-13case-postfix-20260719/semantic-coverage.md` — SHA-256 `a0eb2e48f7f0827c2dcf163e9c88e4160e06e3db79947950eca49afc520db607`

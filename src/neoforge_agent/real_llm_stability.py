@@ -15,6 +15,7 @@ from .manual_runtime_evidence import (
     load_manual_runtime_evidence_cases,
 )
 from .models import RequestOverrides
+from .semantic_coverage import evaluate_semantic_coverage
 from .tools import ensure_directory, write_json, write_text
 
 
@@ -58,6 +59,16 @@ class RealLLMStabilityCaseResult:
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     fallback_errors: list[str] = field(default_factory=list)
+    expected_features: list[str] = field(default_factory=list)
+    matched_expected_features: list[str] = field(default_factory=list)
+    missing_expected_features: list[str] = field(default_factory=list)
+    expected_categories: list[str] = field(default_factory=list)
+    matched_expected_categories: list[str] = field(default_factory=list)
+    missing_expected_categories: list[str] = field(default_factory=list)
+    semantic_success: bool = False
+    ignored_feature_warnings: list[str] = field(default_factory=list)
+    removed_behavior_warnings: list[str] = field(default_factory=list)
+    semantic_warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -99,6 +110,16 @@ class RealLLMStabilityCaseResult:
             "warnings": list(self.warnings),
             "errors": list(self.errors),
             "fallback_errors": list(self.fallback_errors),
+            "expected_features": list(self.expected_features),
+            "matched_expected_features": list(self.matched_expected_features),
+            "missing_expected_features": list(self.missing_expected_features),
+            "expected_categories": list(self.expected_categories),
+            "matched_expected_categories": list(self.matched_expected_categories),
+            "missing_expected_categories": list(self.missing_expected_categories),
+            "semantic_success": self.semantic_success,
+            "ignored_feature_warnings": list(self.ignored_feature_warnings),
+            "removed_behavior_warnings": list(self.removed_behavior_warnings),
+            "semantic_warnings": list(self.semantic_warnings),
         }
 
 
@@ -417,6 +438,12 @@ class RealLLMStabilityRunner:
             f"- total cases: `{metrics.get('total_cases')}`",
             f"- strict success: `{metrics.get('strict_success_count')}`",
             f"- real LLM success: `{metrics.get('real_llm_success_count')}`",
+            f"- semantic success: `{metrics.get('semantic_success_count')}`",
+            f"- expected feature match: `{metrics.get('expected_features_matched')}/{metrics.get('expected_features_total')}`",
+            f"- expected category match: `{metrics.get('expected_categories_matched')}/{metrics.get('expected_categories_total')}`",
+            f"- ignored feature warning messages: `{metrics.get('ignored_feature_warning_count')}`",
+            f"- removed behavior warning messages: `{metrics.get('removed_behavior_warning_count')}`",
+            f"- semantic warning messages: `{metrics.get('semantic_warning_count')}`",
             f"- provider failure: `{metrics.get('provider_failure_count')}`",
             f"- schema failure: `{metrics.get('schema_failure_count')}`",
             f"- audit failure: `{metrics.get('audit_failure_count')}`",
@@ -441,6 +468,7 @@ class RealLLMStabilityRunner:
             lines.append(
                 f"- `{case.identifier}`: `{case.outcome}`"
                 f" strict={str(case.strict_success).lower()}"
+                f" semantic={str(case.semantic_success).lower()}"
                 f" fallback={str(case.fallback_success).lower()}"
                 f" failure={case.failure_type or 'none'}"
                 f" runtime={case.runtime_status}"
@@ -451,6 +479,16 @@ class RealLLMStabilityRunner:
                 lines.append(f"  - fallback workspace: `{case.fallback_workspace}`")
             if case.errors:
                 lines.append(f"  - error: {case.errors[0]}")
+            if case.missing_expected_features:
+                lines.append(
+                    f"  - missing expected features: {', '.join(case.missing_expected_features)}"
+                )
+            if case.missing_expected_categories:
+                lines.append(
+                    f"  - missing expected categories: {', '.join(case.missing_expected_categories)}"
+                )
+            if case.semantic_warnings:
+                lines.append(f"  - semantic warnings: {len(case.semantic_warnings)} unique message(s)")
             if case.runtime_evidence_notes:
                 lines.append(f"  - runtime evidence: {case.runtime_evidence_notes}")
         if result.runtime_evidence_cases:
@@ -523,6 +561,16 @@ def _case_result_from_payload(
     outcome = "real_success" if real_llm_success else _outcome_from_failure(failure_type)
     if llm_provider == "mock" and strict_success:
         outcome = "mock_success"
+    workspace = payload.get("workspace")
+    warnings = _payload_warnings(payload)
+    coverage = evaluate_semantic_coverage(
+        expected_features=case.expected_features,
+        expected_categories=case.expected_categories,
+        modspec=_load_workspace_modspec(workspace),
+        mode=case.mode,
+        process_success=strict_success,
+        warnings=warnings,
+    )
 
     return RealLLMStabilityCaseResult(
         identifier=case.identifier,
@@ -533,7 +581,7 @@ def _case_result_from_payload(
         fallback_used=fallback_used,
         fallback_success=False,
         failure_type=failure_type,
-        workspace=payload.get("workspace"),
+        workspace=workspace,
         planner_mode_used=str(payload.get("planner_mode", "")),
         provider=str(trace.get("provider") or payload.get("llm_provider") or llm_provider),
         model=str(provider_metadata.get("model") or completion.get("model", "")),
@@ -552,8 +600,18 @@ def _case_result_from_payload(
         prompt_trace_present=bool(payload.get("prompt_trace_json_path")) or bool(trace),
         agent_run_json_path=payload.get("agent_run_json_path"),
         prompt_trace_json_path=payload.get("prompt_trace_json_path"),
-        warnings=_payload_warnings(payload),
+        warnings=warnings,
         errors=_payload_errors(payload),
+        expected_features=coverage.expected_features,
+        matched_expected_features=coverage.matched_expected_features,
+        missing_expected_features=coverage.missing_expected_features,
+        expected_categories=coverage.expected_categories,
+        matched_expected_categories=coverage.matched_expected_categories,
+        missing_expected_categories=coverage.missing_expected_categories,
+        semantic_success=coverage.semantic_success,
+        ignored_feature_warnings=coverage.ignored_feature_warnings,
+        removed_behavior_warnings=coverage.removed_behavior_warnings,
+        semantic_warnings=coverage.semantic_warnings,
     )
 
 
@@ -704,6 +762,19 @@ def _payload_errors(payload: dict[str, Any]) -> list[str]:
     return [item for item in errors if item]
 
 
+def _load_workspace_modspec(workspace: str | None) -> dict[str, Any] | None:
+    if not workspace:
+        return None
+    path = Path(workspace) / ".agent" / "modspec.json"
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def _compute_metrics(results: list[RealLLMStabilityCaseResult]) -> dict[str, Any]:
     total = len(results)
     estimated_costs = [
@@ -712,6 +783,11 @@ def _compute_metrics(results: list[RealLLMStabilityCaseResult]) -> dict[str, Any
         if isinstance(result.estimated_cost_usd, (int, float))
     ]
     latencies = [result.latency_ms for result in results if isinstance(result.latency_ms, int)]
+    semantic_success_count = sum(1 for result in results if result.semantic_success)
+    expected_features_total = sum(len(result.expected_features) for result in results)
+    expected_features_matched = sum(len(result.matched_expected_features) for result in results)
+    expected_categories_total = sum(len(result.expected_categories) for result in results)
+    expected_categories_matched = sum(len(result.matched_expected_categories) for result in results)
     return {
         "total_cases": total,
         "strict_success_count": sum(1 for result in results if result.strict_success),
@@ -727,6 +803,14 @@ def _compute_metrics(results: list[RealLLMStabilityCaseResult]) -> dict[str, Any
         "build_failure_count": _failure_count(results, "build_failure"),
         "runtime_failure_count": _failure_count(results, "runtime_failure"),
         "agent_failure_count": _failure_count(results, "agent_failure"),
+        "semantic_success_count": semantic_success_count,
+        "expected_features_total": expected_features_total,
+        "expected_features_matched": expected_features_matched,
+        "expected_categories_total": expected_categories_total,
+        "expected_categories_matched": expected_categories_matched,
+        "ignored_feature_warning_count": sum(len(result.ignored_feature_warnings) for result in results),
+        "removed_behavior_warning_count": sum(len(result.removed_behavior_warnings) for result in results),
+        "semantic_warning_count": sum(len(result.semantic_warnings) for result in results),
         "runtime_checked_count": sum(1 for result in results if result.runtime_checked),
         "runtime_success_count": sum(1 for result in results if result.runtime_success is True),
         "runtime_unverified_count": sum(1 for result in results if not result.runtime_checked),
@@ -741,6 +825,9 @@ def _compute_metrics(results: list[RealLLMStabilityCaseResult]) -> dict[str, Any
         "strict_success_rate": _rate(sum(1 for result in results if result.strict_success), total),
         "real_llm_success_rate": _rate(sum(1 for result in results if result.real_llm_success), total),
         "fallback_success_rate": _rate(sum(1 for result in results if result.fallback_success), total),
+        "semantic_success_rate": _rate(semantic_success_count, total),
+        "expected_feature_match_rate": _rate(expected_features_matched, expected_features_total),
+        "expected_category_match_rate": _rate(expected_categories_matched, expected_categories_total),
     }
 
 

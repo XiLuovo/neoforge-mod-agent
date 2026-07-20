@@ -10,6 +10,7 @@ from typing import Any
 from .agent_orchestrator import AgentOrchestrator
 from .config import AppConfig
 from .models import RequestOverrides
+from .semantic_coverage import evaluate_semantic_coverage, normalize_category as _normalize_category
 from .tools import ensure_directory, write_json, write_text
 
 
@@ -437,8 +438,7 @@ class BenchmarkEvaluator:
             **self._modify_planner_metrics(case, payload, prompt_traces),
         )
         self._attach_agent_artifact_expectations(result)
-        self._attach_feature_expectations(result)
-        self._attach_category_expectations(result)
+        self._attach_semantic_expectations(result)
         return result
 
     def _attach_modify_steps_result(
@@ -626,35 +626,24 @@ class BenchmarkEvaluator:
             result.success = False
             result.errors.append("Missing agent trace artifact(s): " + ", ".join(missing))
 
-    def _attach_feature_expectations(self, result: EvalCaseResult) -> None:
-        if not result.expected_features:
-            return
-
-        actual_features = self._load_workspace_feature_ids(result.workspace)
-        result.matched_expected_features = [
-            feature for feature in result.expected_features if feature in actual_features
-        ]
-        result.missing_expected_features = [
-            feature for feature in result.expected_features if feature not in actual_features
-        ]
+    def _attach_semantic_expectations(self, result: EvalCaseResult) -> None:
+        coverage = evaluate_semantic_coverage(
+            expected_features=result.expected_features,
+            expected_categories=result.expected_categories,
+            modspec=self._load_workspace_modspec(result.workspace),
+            mode=result.mode,
+            process_success=result.success,
+            warnings=result.warnings,
+        )
+        result.matched_expected_features = coverage.matched_expected_features
+        result.missing_expected_features = coverage.missing_expected_features
+        result.matched_expected_categories = coverage.matched_expected_categories
+        result.missing_expected_categories = coverage.missing_expected_categories
         if result.missing_expected_features:
             result.success = False
             result.errors.append(
                 "Missing expected feature(s): " + ", ".join(result.missing_expected_features)
             )
-
-    def _attach_category_expectations(self, result: EvalCaseResult) -> None:
-        if not result.expected_categories:
-            return
-
-        actual_categories = self._load_workspace_categories(result.workspace, mode=result.mode)
-        expected = [_normalize_category(category) for category in result.expected_categories]
-        result.matched_expected_categories = [
-            category for category in expected if category in actual_categories
-        ]
-        result.missing_expected_categories = [
-            category for category in expected if category not in actual_categories
-        ]
         if result.missing_expected_categories:
             result.success = False
             result.errors.append(
@@ -675,29 +664,17 @@ class BenchmarkEvaluator:
                 f"added={repeat_added}, updated={repeat_updated}, skipped={result.repeat_modify_skipped}"
             )
 
-    def _load_workspace_feature_ids(self, workspace: str | None) -> set[str]:
+    def _load_workspace_modspec(self, workspace: str | None) -> dict[str, Any] | None:
         if not workspace:
-            return set()
+            return None
         modspec_path = Path(workspace) / ".agent" / "modspec.json"
         if not modspec_path.exists():
-            return set()
+            return None
         try:
-            data = json.loads(modspec_path.read_text(encoding="utf-8"))
+            payload = json.loads(modspec_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
-            return set()
-        return _feature_ids_from_modspec(data)
-
-    def _load_workspace_categories(self, workspace: str | None, *, mode: str) -> set[str]:
-        if not workspace:
-            return set()
-        modspec_path = Path(workspace) / ".agent" / "modspec.json"
-        if not modspec_path.exists():
-            return set()
-        try:
-            data = json.loads(modspec_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return set()
-        return _categories_from_modspec(data, mode=mode)
+            return None
+        return payload if isinstance(payload, dict) else None
 
     def _load_cases(self, cases_path: Path | None) -> list[EvalCase]:
         if cases_path is None:
@@ -1031,117 +1008,6 @@ def _modify_step_from_dict(data: Any, index: int) -> EvalModifyStep:
     return EvalModifyStep(identifier=f"step_{index}", request=str(data))
 
 
-def _feature_ids_from_modspec(data: dict[str, Any]) -> set[str]:
-    feature_ids: set[str] = set()
-    for feature in _feature_dicts_from_modspec(data):
-        identifier = feature.get("id", feature.get("identifier"))
-        if identifier:
-            feature_ids.add(str(identifier))
-    return feature_ids
-
-
-def _categories_from_modspec(data: dict[str, Any], *, mode: str) -> set[str]:
-    categories: set[str] = set()
-    if mode == "modify":
-        categories.add("modify")
-
-    for feature in _feature_dicts_from_modspec(data):
-        feature_type = _normalize_category(str(feature.get("type", "")))
-        if feature_type in _FEATURE_CATEGORY_TYPES:
-            categories.add(feature_type)
-        if feature_type == "world_feature":
-            categories.add("worldgen")
-        if feature_type == "loot_pool":
-            categories.add("loot")
-        if feature_type == "machine":
-            categories.add("block")
-            categories.add("block_entity")
-            if feature.get("menu_title") or feature.get("inventory_slots"):
-                categories.add("gui")
-            machine_kind = _normalize_category(str(feature.get("machine_kind", "")))
-            if machine_kind:
-                categories.add(machine_kind)
-        if feature_type == "progression":
-            categories.add("progression_report")
-        if feature_type == "balance_plan":
-            categories.add("balance")
-            categories.add("balance_report")
-        if feature_type == "quest":
-            categories.add("advancement")
-            categories.add("guidebook")
-
-        behavior = feature.get("behavior")
-        if isinstance(behavior, dict):
-            behavior_type = _normalize_category(str(behavior.get("type", "")))
-            categories.add("behavior")
-            if behavior_type:
-                categories.add(behavior_type)
-
-        effects = feature.get("effects")
-        if isinstance(effects, list) and effects:
-            categories.add("behavior")
-            categories.add("food_effect")
-
-        on_hit = feature.get("on_hit")
-        if isinstance(on_hit, dict):
-            categories.add("behavior")
-            raw_on_hit_type = str(on_hit.get("type", "")).strip().lower().replace("-", "_").replace(" ", "_")
-            if raw_on_hit_type == "ignite":
-                categories.add("sword_ignite")
-            elif raw_on_hit_type:
-                categories.add(f"sword_{raw_on_hit_type}")
-
-        worldgen = feature.get("worldgen")
-        if isinstance(worldgen, dict) and worldgen.get("enabled"):
-            categories.add("worldgen")
-            categories.add("ore_worldgen")
-
-        block_kind = str(feature.get("block_kind", "cube")).strip().lower()
-        if feature_type == "block" and block_kind and block_kind != "cube":
-            categories.add("block_variants")
-            if block_kind in {"button", "pressure_plate", "fence_gate", "door", "trapdoor"}:
-                categories.add("interactive_blocks")
-
-    return categories
-
-
-def _feature_dicts_from_modspec(data: dict[str, Any]) -> list[dict[str, Any]]:
-    features = data.get("features")
-    if isinstance(features, list) and features:
-        return [feature for feature in features if isinstance(feature, dict)]
-
-    result: list[dict[str, Any]] = []
-    for key, feature_type in _FEATURE_COLLECTION_TYPES:
-        entries = data.get(key, [])
-        if isinstance(entries, list):
-            for entry in entries:
-                if isinstance(entry, dict):
-                    feature = dict(entry)
-                    feature.setdefault("type", feature_type)
-                    result.append(feature)
-    return result
-
-
-def _normalize_category(value: str) -> str:
-    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
-    aliases = {
-        "food_effects": "food_effect",
-        "on_hit_ignite": "sword_ignite",
-        "ignite": "sword_ignite",
-        "ore_natural_generation": "worldgen",
-        "overworld_ore": "worldgen",
-        "overworld_worldgen": "worldgen",
-        "balance": "balance_plan",
-        "balance_planner": "balance_plan",
-        "progression_reports": "progression_report",
-        "questline": "quest",
-        "quests": "quest",
-        "advancements": "advancement",
-        "guide_book": "guidebook",
-    }
-    return aliases.get(normalized, normalized)
-
-
 def _safe_step_identifier(value: str) -> str:
     normalized = "".join(char if char.isalnum() or char in {"-", "_"} else "-" for char in value.strip().lower())
     normalized = "-".join(part for part in normalized.split("-") if part)
@@ -1175,28 +1041,3 @@ def _unique_strings(values: list[str]) -> list[str]:
         seen.add(text)
         result.append(text)
     return result
-
-
-_FEATURE_COLLECTION_TYPES = (
-    ("items", "item"),
-    ("blocks", "block"),
-    ("machines", "machine"),
-    ("entities", "entity"),
-    ("dimensions", "dimension"),
-    ("biomes", "biome"),
-    ("world_features", "world_feature"),
-    ("structures", "structure"),
-    ("loot_pools", "loot_pool"),
-    ("java_extensions", "java_extension"),
-    ("ores", "ore"),
-    ("foods", "food"),
-    ("swords", "sword"),
-    ("tools", "tool"),
-    ("armors", "armor"),
-    ("recipes", "recipe"),
-    ("progressions", "progression"),
-    ("balance_plans", "balance_plan"),
-    ("quests", "quest"),
-)
-
-_FEATURE_CATEGORY_TYPES = {feature_type for _, feature_type in _FEATURE_COLLECTION_TYPES}

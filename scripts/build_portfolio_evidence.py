@@ -54,7 +54,7 @@ RUNS = (
             "workspace/real-llm-stability-runs/"
             "resume-ab-20260718-decomposed-5case/.agent"
         ),
-        files=("real-llm-stability.json", "real-llm-stability.md"),
+        files=("real-llm-stability.json", "real-llm-stability.md", "semantic-coverage.json", "semantic-coverage.md"),
         provider="real-provider",
         validation=("provider", "schema", "generator", "audit"),
         boundary=(
@@ -69,7 +69,7 @@ RUNS = (
             "workspace/real-llm-stability-runs/"
             "resume-ab-20260718-fullschema-5case/.agent"
         ),
-        files=("real-llm-stability.json", "real-llm-stability.md"),
+        files=("real-llm-stability.json", "real-llm-stability.md", "semantic-coverage.json", "semantic-coverage.md"),
         provider="real-provider",
         validation=("provider", "schema", "generator", "audit"),
         boundary=(
@@ -98,7 +98,7 @@ RUNS = (
             "workspace/real-llm-stability-runs/"
             "resume-ab-20260718-decomposed-5case-fix1/.agent"
         ),
-        files=("real-llm-stability.json", "real-llm-stability.md"),
+        files=("real-llm-stability.json", "real-llm-stability.md", "semantic-coverage.json", "semantic-coverage.md"),
         provider="real-provider",
         validation=("provider", "schema", "generator", "audit"),
         boundary=(
@@ -114,7 +114,7 @@ RUNS = (
             "workspace/real-llm-stability-runs/"
             "resume-decomposed-13case-postfix-20260719/.agent"
         ),
-        files=("real-llm-stability.json", "real-llm-stability.md"),
+        files=("real-llm-stability.json", "real-llm-stability.md", "semantic-coverage.json", "semantic-coverage.md"),
         provider="real-provider",
         validation=("provider", "schema", "generator", "audit"),
         boundary=(

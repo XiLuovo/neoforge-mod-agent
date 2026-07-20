@@ -1,0 +1,445 @@
+{
+  "schema_version": "semantic-coverage/v1",
+  "source_run_id": "resume-decomposed-13case-postfix-20260719",
+  "cases": [
+    {
+      "id": "basic_ruby",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-decomposed-13case-postfix-20260719\\runs\\01-basic_ruby-strict",
+      "expected_features": [
+        "ruby"
+      ],
+      "matched_expected_features": [
+        "ruby"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "item"
+      ],
+      "matched_expected_categories": [
+        "item"
+      ],
+      "missing_expected_categories": [],
+      "semantic_success": true,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": [
+        "Progression stage 'craft_ruby_tools' provides references unknown target 'ruby_mod:ruby_pickaxe_recipe'.",
+        "Progression stage 'craft_ruby_tools' provides references unknown target 'ruby_mod:ruby_axe_recipe'.",
+        "Progression stage 'craft_ruby_tools' provides references unknown target 'ruby_mod:ruby_shovel_recipe'.",
+        "Progression stage 'craft_ruby_tools' provides references unknown target 'ruby_mod:ruby_hoe_recipe'.",
+        "Progression stage 'craft_ruby_sword' provides references unknown target 'ruby_mod:ruby_sword_recipe'.",
+        "Progression 'ruby_progression' has multiple stages but no links.",
+        "Progression 'ruby_progression' entry stage 'find_ruby_ore' cannot reach end stage 'full_ruby_set'."
+      ]
+    },
+    {
+      "id": "ruby_charm_behavior",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-decomposed-13case-postfix-20260719\\runs\\02-ruby_charm_behavior-strict",
+      "expected_features": [
+        "ruby_charm"
+      ],
+      "matched_expected_features": [
+        "ruby_charm"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "item",
+        "behavior",
+        "right_click_heal"
+      ],
+      "matched_expected_categories": [
+        "item",
+        "behavior",
+        "right_click_heal"
+      ],
+      "missing_expected_categories": [],
+      "semantic_success": true,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": []
+    },
+    {
+      "id": "speed_crystal_behavior",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-decomposed-13case-postfix-20260719\\runs\\03-speed_crystal_behavior-strict",
+      "expected_features": [
+        "speed_crystal"
+      ],
+      "matched_expected_features": [
+        "speed_crystal"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "item",
+        "behavior",
+        "right_click_effect"
+      ],
+      "matched_expected_categories": [
+        "item",
+        "behavior",
+        "right_click_effect"
+      ],
+      "missing_expected_categories": [],
+      "semantic_success": true,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": []
+    },
+    {
+      "id": "ruby_apple_effect",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-decomposed-13case-postfix-20260719\\runs\\04-ruby_apple_effect-strict",
+      "expected_features": [
+        "ruby_apple"
+      ],
+      "matched_expected_features": [
+        "ruby_apple"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "food",
+        "behavior",
+        "food_effect"
+      ],
+      "matched_expected_categories": [],
+      "missing_expected_categories": [
+        "food",
+        "behavior",
+        "food_effect"
+      ],
+      "semantic_success": false,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": []
+    },
+    {
+      "id": "ruby_sword_ignite",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-decomposed-13case-postfix-20260719\\runs\\05-ruby_sword_ignite-strict",
+      "expected_features": [
+        "ruby_sword"
+      ],
+      "matched_expected_features": [
+        "ruby_sword"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "sword",
+        "behavior",
+        "sword_ignite"
+      ],
+      "matched_expected_categories": [
+        "sword"
+      ],
+      "missing_expected_categories": [
+        "behavior",
+        "sword_ignite"
+      ],
+      "semantic_success": false,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [
+        "Decomposed feature 'ruby_sword' had empty behavior type; removed behavior."
+      ],
+      "semantic_warnings": [
+        "Decomposed feature 'ruby_sword' had empty behavior type; removed behavior."
+      ]
+    },
+    {
+      "id": "ruby_pickaxe_tool",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-decomposed-13case-postfix-20260719\\runs\\06-ruby_pickaxe_tool-strict",
+      "expected_features": [
+        "ruby_pickaxe"
+      ],
+      "matched_expected_features": [
+        "ruby_pickaxe"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "tool"
+      ],
+      "matched_expected_categories": [
+        "tool"
+      ],
+      "missing_expected_categories": [],
+      "semantic_success": true,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": []
+    },
+    {
+      "id": "ruby_tool_set",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-decomposed-13case-postfix-20260719\\runs\\07-ruby_tool_set-strict",
+      "expected_features": [
+        "ruby_sword",
+        "ruby_pickaxe",
+        "ruby_axe",
+        "ruby_shovel",
+        "ruby_hoe"
+      ],
+      "matched_expected_features": [
+        "ruby_sword",
+        "ruby_pickaxe",
+        "ruby_axe",
+        "ruby_shovel",
+        "ruby_hoe"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "item",
+        "sword",
+        "tool",
+        "recipe"
+      ],
+      "matched_expected_categories": [
+        "item",
+        "sword",
+        "tool",
+        "recipe"
+      ],
+      "missing_expected_categories": [],
+      "semantic_success": true,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": []
+    },
+    {
+      "id": "ruby_armor_set",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-decomposed-13case-postfix-20260719\\runs\\08-ruby_armor_set-strict",
+      "expected_features": [
+        "ruby_helmet",
+        "ruby_chestplate",
+        "ruby_leggings",
+        "ruby_boots"
+      ],
+      "matched_expected_features": [],
+      "missing_expected_features": [
+        "ruby_helmet",
+        "ruby_chestplate",
+        "ruby_leggings",
+        "ruby_boots"
+      ],
+      "expected_categories": [
+        "item",
+        "armor",
+        "recipe"
+      ],
+      "matched_expected_categories": [
+        "item",
+        "recipe"
+      ],
+      "missing_expected_categories": [
+        "armor"
+      ],
+      "semantic_success": false,
+      "ignored_feature_warnings": [
+        "Decomposed planner v1 ignored unsupported feature type: armor"
+      ],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": [
+        "Decomposed planner v1 ignored unsupported feature type: armor"
+      ]
+    },
+    {
+      "id": "ruby_block_variants",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-decomposed-13case-postfix-20260719\\runs\\09-ruby_block_variants-strict",
+      "expected_features": [
+        "ruby_block",
+        "ruby_stairs",
+        "ruby_slab",
+        "ruby_wall",
+        "ruby_button",
+        "ruby_pressure_plate",
+        "ruby_fence",
+        "ruby_fence_gate",
+        "ruby_door",
+        "ruby_trapdoor"
+      ],
+      "matched_expected_features": [],
+      "missing_expected_features": [
+        "ruby_block",
+        "ruby_stairs",
+        "ruby_slab",
+        "ruby_wall",
+        "ruby_button",
+        "ruby_pressure_plate",
+        "ruby_fence",
+        "ruby_fence_gate",
+        "ruby_door",
+        "ruby_trapdoor"
+      ],
+      "expected_categories": [
+        "item",
+        "block",
+        "recipe",
+        "block_variants",
+        "interactive_blocks"
+      ],
+      "matched_expected_categories": [
+        "item"
+      ],
+      "missing_expected_categories": [
+        "block",
+        "recipe",
+        "block_variants",
+        "interactive_blocks"
+      ],
+      "semantic_success": false,
+      "ignored_feature_warnings": [
+        "Decomposed planner v1 ignored unsupported feature type: block"
+      ],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": [
+        "Decomposed planner v1 ignored unsupported feature type: block"
+      ]
+    },
+    {
+      "id": "ruby_ore_worldgen",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-decomposed-13case-postfix-20260719\\runs\\10-ruby_ore_worldgen-strict",
+      "expected_features": [
+        "ruby",
+        "ruby_ore"
+      ],
+      "matched_expected_features": [
+        "ruby",
+        "ruby_ore"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "item",
+        "ore",
+        "worldgen"
+      ],
+      "matched_expected_categories": [
+        "item",
+        "ore",
+        "worldgen"
+      ],
+      "missing_expected_categories": [],
+      "semantic_success": true,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": []
+    },
+    {
+      "id": "ruby_goblin_entity",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-decomposed-13case-postfix-20260719\\runs\\11-ruby_goblin_entity-strict",
+      "expected_features": [
+        "ruby_goblin"
+      ],
+      "matched_expected_features": [
+        "ruby_goblin"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "entity"
+      ],
+      "matched_expected_categories": [],
+      "missing_expected_categories": [
+        "entity"
+      ],
+      "semantic_success": false,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": []
+    },
+    {
+      "id": "ruby_realm_world_structure",
+      "strict_success": false,
+      "workspace": null,
+      "expected_features": [
+        "ruby_realm",
+        "ruby_fields",
+        "ruby_vein",
+        "ruby_shrine"
+      ],
+      "matched_expected_features": [],
+      "missing_expected_features": [
+        "ruby_realm",
+        "ruby_fields",
+        "ruby_vein",
+        "ruby_shrine"
+      ],
+      "expected_categories": [
+        "dimension",
+        "biome",
+        "worldgen",
+        "structure"
+      ],
+      "matched_expected_categories": [],
+      "missing_expected_categories": [
+        "dimension",
+        "biome",
+        "worldgen",
+        "structure"
+      ],
+      "semantic_success": false,
+      "ignored_feature_warnings": [
+        "Decomposed planner v1 ignored unsupported feature type: dimension",
+        "Decomposed planner v1 ignored unsupported feature type: biome",
+        "Decomposed planner v1 ignored unsupported feature type: world_feature",
+        "Decomposed planner v1 ignored unsupported feature type: structure",
+        "Decomposed planner v1 ignored unsupported feature type: loot_pool"
+      ],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": [
+        "Decomposed planner v1 ignored unsupported feature type: dimension",
+        "Decomposed planner v1 ignored unsupported feature type: biome",
+        "Decomposed planner v1 ignored unsupported feature type: world_feature",
+        "Decomposed planner v1 ignored unsupported feature type: structure",
+        "Decomposed planner v1 ignored unsupported feature type: loot_pool"
+      ]
+    },
+    {
+      "id": "progression_gameplay_loop",
+      "strict_success": true,
+      "workspace": "<repo>\\workspace\\real-llm-stability-runs\\resume-decomposed-13case-postfix-20260719\\runs\\13-progression_gameplay_loop-strict",
+      "expected_features": [
+        "ruby_progression"
+      ],
+      "matched_expected_features": [
+        "ruby_progression"
+      ],
+      "missing_expected_features": [],
+      "expected_categories": [
+        "progression",
+        "machine",
+        "tool"
+      ],
+      "matched_expected_categories": [
+        "progression",
+        "machine",
+        "tool"
+      ],
+      "missing_expected_categories": [],
+      "semantic_success": true,
+      "ignored_feature_warnings": [],
+      "removed_behavior_warnings": [],
+      "semantic_warnings": [
+        "Requested Quest / Advancement / Guide DSL, but no quest chain is declared."
+      ]
+    }
+  ],
+  "metrics": {
+    "total_cases": 13,
+    "semantic_success_count": 7,
+    "semantic_success_rate": 0.5385,
+    "expected_features_total": 33,
+    "expected_features_matched": 15,
+    "expected_feature_match_rate": 0.4545,
+    "expected_categories_total": 37,
+    "expected_categories_matched": 22,
+    "expected_category_match_rate": 0.5946,
+    "ignored_feature_warning_count": 7,
+    "removed_behavior_warning_count": 1,
+    "semantic_warning_count": 16
+  },
+  "boundary": "Semantic coverage compares expected features/categories with the generated ModSpec. It does not prove Gradle build or Minecraft runtime behavior."
+}
